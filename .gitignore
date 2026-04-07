@@ -1,0 +1,14 @@
+# Build artifacts
+*.fasl
+*.so
+*.bundle
+
+# ASDF
+.lispobj
+
+# Editor
+*~
+
+# OCICL
+ocicl/
+ocicl.csv
