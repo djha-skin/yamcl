@@ -43,7 +43,8 @@ specification.
 The development environment is inside a **tmux** session with panes
 for:
 
-- **Lisp REPL**: Invoke with `ros +Q run`
+- **Lisp REPL/Running**: Invoke with the `cl-mcp` tool or the `tools/one-shot-lisp.ros`
+  script
 - **Goose CLI**: This session
 - **Manual commands**: Shell pane
 
@@ -51,13 +52,13 @@ for:
 
 There are two good ways to interact with or run arbitrary lisp code:
 
-1. Use `ros +Q -e '(code)'` for one-off commands
+1. Use `tools/one-shot-lisp.ros '(code)'` for one-off commands
 2. Use the `cl-mcp` MCP tool
 
 Example:
 
-```bash
-ros +Q -e '(format t "~A~%" (com.djhaskin.yamcl:+eof+))'
+```bash 
+tools/one-shot-lisp.ros '(format t "~A~%" (com.djhaskin.yamcl:+eof+))'
 ```
 
 ## YAML Implementation Approach

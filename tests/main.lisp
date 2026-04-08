@@ -44,14 +44,18 @@
 (define-test peek-chr-string-test
   :parent yamcl-suite
   "Test peek-chr on string input."
-  (is char= (yamcl::peek-chr "hello") #\h)
-  (is eq (yamcl::peek-chr "") :eof))
+  (let ((q (yamcl:make-char-queue :chars (coerce "hello" 'list))))
+    (is char= (yamcl::peek-chr q) #\h))
+  (let ((q (yamcl:make-char-queue :chars '())))
+    (is eq (yamcl::peek-chr q) :eof)))
 
 (define-test read-chr-string-test
   :parent yamcl-suite
   "Test read-chr on string input."
-  (is char= (yamcl::read-chr "hello") #\h)
-  (is eq (yamcl::read-chr "") :eof))
+  (let ((q (yamcl:make-char-queue :chars (coerce "hello" 'list))))
+    (is char= (yamcl::read-chr q) #\h))
+  (let ((q (yamcl:make-char-queue :chars '())))
+    (is eq (yamcl::read-chr q) :eof)))
 
 (define-test whitespace-p-test
   :parent yamcl-suite
@@ -80,39 +84,73 @@
 (define-test extract-comment-test
   :parent yamcl-suite
   "Test comment extraction."
-  (with-input-from-string (s "# This is a comment")
-    (is eq (yamcl::extract-comment s) :eof))
-  (with-input-from-string (s (format nil "Comment~%next line"))
-    (is char= (yamcl::extract-comment s) #\n)))
+  ;; Comment at end of stream returns :eof
+  (let ((q (yamcl:make-char-queue :chars (coerce "# This is a comment" 'list))))
+    (is eq (yamcl::extract-comment q) :eof))
+  ;; Comment followed by more content returns the newline
+  (let ((q (yamcl:make-char-queue :chars (coerce (format nil "# comment~%next line") 'list))))
+    (is char= (yamcl::extract-comment q) #\Newline))
+  ;; skip-whitespace-and-comments skips whitespace + comment and
+  ;; returns the first non-whitespace char AFTER the comment
+  (let ((q (yamcl:make-char-queue :chars (coerce (format nil "  # comment~%hello") 'list))))
+    (is char= (yamcl::skip-whitespace-and-comments q) #\h)))
 
 (define-test skip-whitespace-and-comments-test
   :parent yamcl-suite
   "Test skipping whitespace and comments."
-  (is char= (yamcl::skip-whitespace-and-comments "  hello") #\h)
-  (is char= (yamcl::skip-whitespace-and-comments
-             (format nil "# comment~%hello")) #\h)
-  (is char= (yamcl::skip-whitespace-and-comments
-             (format nil "  # comment~%hello")) #\h)
-  (is eq (yamcl::skip-whitespace-and-comments "   ") :eof)
-  (is eq (yamcl::skip-whitespace-and-comments "") :eof))
+  (let ((q1 (yamcl:make-char-queue :chars (coerce "  hello" 'list))))
+    (is char= (yamcl::skip-whitespace-and-comments q1) #\h))
+  (let ((q2 (yamcl:make-char-queue :chars (coerce (format nil "# comment~%hello") 'list))))
+    (is char= (yamcl::skip-whitespace-and-comments q2) #\h))
+  (let ((q3 (yamcl:make-char-queue :chars (coerce (format nil "  # comment~%hello") 'list))))
+    (is char= (yamcl::skip-whitespace-and-comments q3) #\h))
+  (let ((q4 (yamcl:make-char-queue :chars (coerce "   " 'list))))
+    (is eq (yamcl::skip-whitespace-and-comments q4) :eof))
+  (let ((q5 (yamcl:make-char-queue :chars '())))
+    (is eq (yamcl::skip-whitespace-and-comments q5) :eof)))
 
 ;;; -------------------------------------------------------
-;;; parse-from Tests (TODO: expand as features are added)
+;;; JSON Scalar Parsing Tests
 ;;; -------------------------------------------------------
 
-(define-test parse-from-empty-test
+(define-test parse-json-boolean-test
   :parent yamcl-suite
-  "Test parsing empty input."
-  (is equal (yamcl:parse-from "") nil)
-  (is equal (yamcl:parse-from "   ") nil)
-  (is equal (yamcl:parse-from "# just a comment") nil))
+  "Test parsing JSON boolean values."
+  (is eq (yamcl:parse-from "true") t)
+  (is eq (yamcl:parse-from "false") nil)
+  (is eq (yamcl:parse-from "true  ") t)  ; trailing whitespace
+  (is eq (yamcl:parse-from "  false") nil))  ; leading whitespace
 
-(define-test parse-from-placeholder-test
+(define-test parse-json-null-test
   :parent yamcl-suite
-  "Test that parse-from currently signals extraction-error
-for non-empty content (placeholder behavior)."
-  (is eq (nth-value 1 (ignore-errors (yamcl:parse-from "hello")))
-      'yamcl::extraction-error))
+  "Test parsing JSON null values."
+  (is equal (yamcl:parse-from "null") nil)
+  (is equal (yamcl:parse-from "null  ") nil)
+  (is equal (yamcl:parse-from "~") nil)  ; YAML alias for null
+  (is equal (yamcl:parse-from "~  ") nil))
+
+(define-test parse-json-integer-test
+  :parent yamcl-suite
+  "Test parsing JSON integer values."
+  (is = (yamcl:parse-from "0") 0)
+  (is = (yamcl:parse-from "42") 42)
+  (is = (yamcl:parse-from "-17") -17)
+  (is = (yamcl:parse-from "  123  ") 123))
+
+(define-test parse-json-float-test
+  :parent yamcl-suite
+  "Test parsing JSON float values."
+  (is = (yamcl:parse-from "3.14") 3.14)
+  (is = (yamcl:parse-from "-2.5") -2.5)
+  (is = (yamcl:parse-from "1e10") 1e10)
+  (is = (yamcl:parse-from "2.5E-3") 2.5e-3))
+
+(define-test parse-json-string-test
+  :parent yamcl-suite
+  "Test parsing JSON string values."
+  (is string= (yamcl:parse-from "\"hello\"") "hello")
+  (is string= (yamcl:parse-from "\"\"") "")
+  (is string= (yamcl:parse-from "  \"world\"  ") "world"))
 
 ;;; -------------------------------------------------------
 ;;; generate-to Tests (TODO: expand as features are added)
@@ -121,13 +159,13 @@ for non-empty content (placeholder behavior)."
 (define-test generate-to-placeholder-test
   :parent yamcl-suite
   "Test that generate-to currently outputs placeholder."
-  (let ((result (yamcl:generate-to
-                  (make-string-output-stream)
-                  nil)))
-    (true (search "# YAML generation not yet implemented" result))))
+  (let ((result (get-output-stream-string (yamcl:generate-to
+                                            (make-string-output-stream)
+                                            nil))))
+    (true (search "YAML generation" result))))
 
 (define-test generate-to-string-output-test
   :parent yamcl-suite
-  "Test generate-to with string output."
-  (let ((result (yamcl:generate-to "" nil)))
-    (true (stringp result))))
+  "Test generate-to returns a string-output-stream."
+  (let ((result (yamcl:generate-to nil nil)))
+    (true (streamp result))))

@@ -4,7 +4,8 @@
 exec ros +Q -- $0 "$@"
 |#
 (progn ;;init forms
-  (ros:ensure-asdf))
+  (ros:ensure-asdf)
+  (load "/home/skin/.roswell/lisp/quicklisp/setup.lisp"))
 
 (defpackage :ros.script.one-shot-lisp
   (:use :cl))
