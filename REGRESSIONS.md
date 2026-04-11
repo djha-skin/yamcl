@@ -1,56 +1,78 @@
 # REGRESSIONS.md
 
-Known issues and required fixes for yamcl.
+Known issues to fix for yamcl JSON scalar support.
 
-## Open Issues
+## Issue 1: false and null are indistinguishable
 
-(None currently - all known issues resolved)
+**Status**: OPEN  
+**Severity**: High  
+**Description**: `parse-from` parses both `false` and `null` into CL's `nil`, making them indistinguishable.
 
-## Completed Fixes
+**Expected behavior** (per jzon/nrdl design):
+- `null` → `cl:null` (out-of-band symbol)
+- `false` → `nil` (CL nil)
+- `true` → `t` (CL t)
+- `~` → `cl:null`
 
-### Issue: `generate-to` used wrong error type
-**Fixed**: Created `generation-error` condition distinct from `extraction-error`
-- `generate-to` now signals `generation-error` for unsupported types
+**Reference**: nrdl's `convert-to-symbol` function
 
-### Issue: Special YAML floats (.inf, .nan) not parsed
-**Fixed**: Implemented parsing of:
-- `.inf`, `.Inf`, `.INF` → `:+inf` (positive infinity as keyword)
-- `-.inf`, etc. → `:-inf` (negative infinity as keyword)
-- `.nan`, `.NaN`, `.NAN` → `nan` (CL's NaN)
+---
 
-### Issue: Invalid numbers like `+.foo` partially parsed
-**Fixed**: Added validation for decimal points
-- After `.` expects digit or special float keyword
-- Signals `extraction-error` for invalid patterns like `+.foo`, `1.`
+## Issue 2: JSON String Escape Sequences Not Handled
 
-### Issue #4: `generate-to` is a placeholder
-**Fixed**: Implemented proper scalar serialization
-- `nil` → `"false"`
-- `+null+` → `"null"`
-- `t` → `"true"`
-- numbers → `prin1` output
-- strings → double-quoted with escapes
+**Status**: OPEN  
+**Severity**: High  
+**Description**: `parse-string` does not handle JSON escape sequences as per RFC 8259 section 7.
 
-### Issue #3: API takes strings instead of streams
-**Fixed**: API redesigned per NRDL pattern
-- `parse-from` takes a stream
-- `generate-to` takes a stream
-- `parse-from-string` wrapper added
-- `generate-to-string` wrapper added
-
-### Issue #2: String escape sequences not fully implemented
-**Fixed**: All RFC 8259 Section 7 escapes implemented
+**Expected escapes** (per RFC 8259):
 - `\"` → `"`
-- `\\` → `\\`
+- `\\` → `\`
 - `\/` → `/`
-- `\b` → backspace (code-char 8)
-- `\f` → form feed (code-char 12)
-- `\n` → newline
-- `\r` → carriage return
-- `\t` → tab
+- `\b` → Backspace
+- `\f` → Page
+- `\n` → Newline
+- `\r` → Return
+- `\t` → Tab
 - `\uXXXX` → Unicode character
 
-### Issue #1: `parse-from` conflates `false` and `null`
-**Fixed**: Distinction now preserved
-- `false` → CL's `nil` (falsy)
-- `null` / `~` → `+null+` sentinel (truthy)
+**Reference**: nrdl's `extract-quoted` function, RFC 8259
+
+---
+
+## Issue 3: parse-from and generate-to take strings instead of streams
+
+**Status**: OPEN  
+**Severity**: Medium  
+**Description**: Current API takes strings directly. Should take streams with wrapper functions.
+
+**Expected API**:
+- `parse-from` → takes streams (file-stream, string-stream, etc.)
+- `generate-to` → takes streams
+- `parse-from-string` → wrapper using `with-input-from-string`
+- `generate-to-string` → wrapper using `with-output-to-string`
+
+**Reference**: nrdl's API design
+
+---
+
+## Issue 4: generate-to does not handle cl:null
+
+**Status**: OPEN  
+**Severity**: Medium  
+**Description**: When generating YAML/JSON, `generate-to` should convert `cl:null` back to `null`.
+
+**Expected behavior**:
+- `nil` → `false`
+- `cl:null` → `null`
+- `t` → `true`
+
+**Reference**: nrdl's `inject-symbol` function
+
+---
+
+## Completion Checklist
+
+- [ ] Issue 1: Distinguish false vs null
+- [ ] Issue 2: JSON string escape sequences
+- [ ] Issue 3: Stream-based API
+- [ ] Issue 4: generate-to handles cl:null
