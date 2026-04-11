@@ -11,7 +11,7 @@
   (:export
     parse-from parse-from-string
     generate-to generate-to-string
-    +eof+ +null+ extraction-error
+    +eof+ +null+ extraction-error generation-error
     make-char-queue char-queue-peek char-queue-pop))
 
 (in-package #:com.djhaskin.yamcl)
@@ -26,6 +26,13 @@
    (got :initarg :got :reader got))
   (:report (lambda (c s)
              (format s "Expected ~A; got ~A"
+                     (expected c) (got c)))))
+
+(define-condition generation-error (error)
+  ((expected :initarg :expected :reader expected)
+   (got :initarg :got :reader got))
+  (:report (lambda (c s)
+             (format s "Cannot generate ~A; got ~A"
                      (expected c) (got c)))))
 
 (deftype streamable () '(or stream string list char-queue))
@@ -134,20 +141,43 @@
 
 (defun parse-number (strm)
   (let ((chars nil) (c (peek-chr strm)))
+    ;; Optional sign
     (when (and (characterp c) (or (char= c #\+) (char= c #\-)))
       (push (read-chr strm) chars)
       (setf c (peek-chr strm)))
+    ;; Check for special YAML floats: .inf, .nan
+    (when (and (characterp c) (char= c #\.))
+      (let ((next (peek-chr strm)))
+        (when (member next '(#\i #\I #\n #\N) :test #'char=)
+          (read-chr strm)
+          (let ((word (extract-word strm)))
+            (cond
+              ((member word '("inf" "Inf" "INF") :test #'string=)
+               (return-from parse-number
+                 (if (and chars (char= (car chars) #\-)) ':-inf ':+inf)))
+              ((member word '("nan" "NaN" "NAN") :test #'string=)
+               (return-from parse-number 'nan))
+              (t (error 'extraction-error
+                        :expected "valid special float (.inf, .nan)"
+                        :got (concatenate 'string "." word))))))))
+    ;; Parse regular integer part
     (loop while (and (characterp c) (digit-char-p c))
           do (push (read-chr strm) chars)
              (setf c (peek-chr strm)))
     (when (null chars)
       (error 'extraction-error :expected "digit" :got c))
+    ;; Check for decimal point
     (when (and (characterp c) (char= c #\.))
       (push (read-chr strm) chars)
       (setf c (peek-chr strm))
+      (unless (and (characterp c) (digit-char-p c))
+        (error 'extraction-error
+                :expected "digit after decimal point"
+                :got c))
       (loop while (and (characterp c) (digit-char-p c))
             do (push (read-chr strm) chars)
                (setf c (peek-chr strm))))
+    ;; Check for exponent
     (when (and (characterp c) (or (char= c #\e) (char= c #\E)))
       (push (read-chr strm) chars)
       (setf c (peek-chr strm))
@@ -203,7 +233,7 @@
       ((char= c #\t) (parse-boolean strm))
       ((char= c #\f) (parse-boolean strm))
       ((char= c #\n) (parse-null strm))
-      ((char= c #\~) (read-chr strm) 'cl:null)
+      ((char= c #\~) (read-chr strm) +null+)
       ((or (char= c #\+) (char= c #\-) (digit-char-p c))
        (parse-number strm))
       ((char= c #\") (parse-string strm))
@@ -232,8 +262,8 @@
     (string (progn (write-char #\" strm)
                    (write-string val strm)
                    (write-char #\" strm)))
-    (t (error 'extraction-error
-              :expected "YAML value" :got val)))
+    (t (error 'generation-error
+              :expected "YAML serializable value" :got val)))
   val)
 
 (defun generate-to-string (val &key (pretty-indent 0) json-mode)

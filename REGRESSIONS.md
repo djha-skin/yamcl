@@ -4,21 +4,24 @@ Known issues and required fixes for yamcl.
 
 ## Open Issues
 
-### 1. String escape tests fail due to `format` limitations
-**Severity**: Test Defect
-**Status**: Open
-
-Tests using `format` with `~%` produce incorrect output for certain escape sequences.
-The `parse-string` implementation is correct; tests need to use literal character constants.
-
-### 2. Tab character tests fail
-**Severity**: Test Defect
-**Status**: Open
-
-The test for `\t` (tab) uses `format` which doesn't produce correct tab characters.
-Need to use literal `#\Tab` character constant instead.
+(None currently - all known issues resolved)
 
 ## Completed Fixes
+
+### Issue: `generate-to` used wrong error type
+**Fixed**: Created `generation-error` condition distinct from `extraction-error`
+- `generate-to` now signals `generation-error` for unsupported types
+
+### Issue: Special YAML floats (.inf, .nan) not parsed
+**Fixed**: Implemented parsing of:
+- `.inf`, `.Inf`, `.INF` → `:+inf` (positive infinity as keyword)
+- `-.inf`, etc. → `:-inf` (negative infinity as keyword)
+- `.nan`, `.NaN`, `.NAN` → `nan` (CL's NaN)
+
+### Issue: Invalid numbers like `+.foo` partially parsed
+**Fixed**: Added validation for decimal points
+- After `.` expects digit or special float keyword
+- Signals `extraction-error` for invalid patterns like `+.foo`, `1.`
 
 ### Issue #4: `generate-to` is a placeholder
 **Fixed**: Implemented proper scalar serialization

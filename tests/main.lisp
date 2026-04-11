@@ -108,6 +108,36 @@
   (is = (yamcl:parse-from-string "1e10") 1e10)
   (is = (yamcl:parse-from-string "2.5E-3") 2.5e-3))
 
+(define-test parse-yaml-special-floats-test
+  :parent yamcl-suite
+  ;; Positive infinity
+  (is eq (yamcl:parse-from-string ".inf") ':+inf)
+  (is eq (yamcl:parse-from-string "+.inf") ':+inf)
+  (is eq (yamcl:parse-from-string ".Inf") ':+inf)
+  (is eq (yamcl:parse-from-string "+.Inf") ':+inf)
+  (is eq (yamcl:parse-from-string ".INF") ':+inf)
+  (is eq (yamcl:parse-from-string "+.INF") ':+inf)
+  ;; Negative infinity
+  (is eq (yamcl:parse-from-string "-.inf") ':-inf)
+  (is eq (yamcl:parse-from-string "-.Inf") ':-inf)
+  (is eq (yamcl:parse-from-string "-.INF") ':-inf)
+  ;; NaN
+  (is eq (yamcl:parse-from-string ".nan") 'nan)
+  (is eq (yamcl:parse-from-string "+.nan") 'nan)
+  (is eq (yamcl:parse-from-string "-.nan") 'nan)
+  (is eq (yamcl:parse-from-string ".NaN") 'nan)
+  (is eq (yamcl:parse-from-string ".NAN") 'nan))
+
+(define-test parse-invalid-number-test
+  :parent yamcl-suite
+  ;; Invalid number: . followed by non-digit non-special
+  (fail (yamcl:parse-from-string "+.foo") 'yamcl::extraction-error)
+  (fail (yamcl:parse-from-string "-.bar") 'yamcl::extraction-error)
+  (fail (yamcl:parse-from-string "1.foo") 'yamcl::extraction-error)
+  ;; Invalid: decimal point with no following digit
+  (fail (yamcl:parse-from-string "1.") 'yamcl::extraction-error)
+  (fail (yamcl:parse-from-string "1.e") 'yamcl::extraction-error))
+
 (define-test parse-json-string-test
   :parent yamcl-suite
   (is string= (yamcl:parse-from-string "\"hello\"") "hello")
@@ -169,6 +199,12 @@
   :parent yamcl-suite
   (is string= (yamcl:generate-to-string "hello") "\"hello\"")
   (is string= (yamcl:generate-to-string "") "\"\""))
+
+(define-test generation-error-test
+  :parent yamcl-suite
+  ;; Attempting to generate unsupported types should signal generation-error
+  (fail (yamcl:generate-to-string (cons 'a 'b)) 'yamcl::generation-error)
+  (fail (yamcl:generate-to-string #'(lambda ())) 'yamcl::generation-error))
 
 ;;; Round-trip Tests
 
