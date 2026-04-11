@@ -1,127 +1,96 @@
-# REGRESSIONS.md
+# REGRESSIONS.md - yamcl
 
-Known issues that need fixing before production-ready YAML parsing.
+This document tracks known issues and regressions to fix before considering
+the initial implementation complete.
 
 ## REGR-001: API - Streams Only (No String Arguments)
 
-**Problem**: `parse-from` and `generate-to` currently accept strings directly.
+**Status**: Pending
 
-**Required Behavior**:
-- `parse-from` and `generate-to` must take **streams only**
-- Helper functions `parse-from-string` and `generate-to-string` wrap with `with-input-from-string` / `with-output-to-string`
+**Problem**: `parse-from` and `generate-to` currently accept strings as
+arguments, which is not the ideal API design.
 
-**Reference**: NRDL `../nrdl/cl/main.lisp` uses this pattern:
-```lisp
-(defun parse-from (strm)
-  (declare (type streamable strm))
-  ...)
+**Desired Behavior**:
+- `parse-from` and `generate-to` should accept only streams
+- Users should use `with-input-from-string` / `with-output-to-string` wrappers
+- Reference: NRDL `../nrdl/cl/main.lisp` does this correctly
 
-;; Helper for string convenience:
-;; (with-input-from-string (s "yaml content") (parse-from s))
-```
-
-**Status**: [ ] Not started
-
----
+**Helper Functions to Add**:
+- `parse-from-string` - wraps `parse-from` with string input
+- `generate-to-string` - wraps `generate-to` with string output
 
 ## REGR-002: null vs false Distinction
 
-**Problem**: `parse-from` parses both `false` and `null` into CL's `nil`, making them indistinguishable.
+**Status**: Pending
 
-**Required Behavior**:
-- Parse `null` (and `~`) → `cl:null` (the symbol, not CL's nil)
-- Parse `false` → `nil` (CL's nil)
-- `generate-to` must output `"null"` for `cl:null` and `"false"` for `nil`
+**Problem**: `parse-from` parses both `false` and `null` into CL's `nil`,
+making them indistinguishable.
 
-**Reference**: NRDL `convert-to-symbol` and `symbol-string`:
+**Desired Behavior** (jzon-like):
+- `true` → `t` (CL's boolean true)
+- `false` → `nil` (CL's boolean false)
+- `null` → `cl:null` (out-of-band symbol, per NRDL design)
+
+**Reference**: NRDL `convert-to-symbol` function handles this:
 ```lisp
-(defun convert-to-symbol (final-string)
-  (cond ((string= final-string "false") nil)
-        ((string= final-string "null") 'cl:null)
-        ...))
-
-(defun symbol-string (sym)
-  (cond ((eql sym 'nil) "false")
-        ((eql sym 'cl:null) "null")
-        ...))
+((string= final-string "false") nil)
+((string= final-string "null") 'cl:null)
 ```
-
-**Status**: [ ] Not started
-
----
 
 ## REGR-003: Escape Sequences in String Parsing
 
-**Problem**: String parsing doesn't handle backslash escape sequences.
+**Status**: Pending
 
-**Required Behavior** (per RFC 8259 Section 7):
-| Escape | Meaning |
-|--------|---------|
-| `\"` | quotation mark |
-| `\\` | reverse solidus (backslash) |
-| `\/` | solidus (forward slash) |
-| `\b` | backspace |
-| `\f` | form feed |
-| `\n` | line feed (newline) |
-| `\r` | carriage return |
-| `\t` | tab |
-| `\uXXXX` | Unicode code point |
+**Problem**: String parsing does not handle backslash escape sequences.
 
-**Reference**: NRDL `extract-quoted` handles all these:
-```lisp
-(cond
-  ((eql last-read quote-char) (push quote-char building))
-  ((char= last-read #\\) (push last-read building))
-  ((char= last-read #\/) (push last-read building))
-  ((char= last-read #\b) (push #\Backspace building))
-  ...)
-```
+**Required Escapes** (per RFC 8259 Section 7):
+- `\"` → `"`
+- `\\` → `\`
+- `\/` → `/`
+- `\b` → Backspace (code 8)
+- `\f` → Form feed (code 12)
+- `\n` → Newline
+- `\r` → Carriage return
+- `\t` → Tab
+- `\uXXXX` → Unicode character
 
-**Status**: [ ] Not started
-
----
+**Reference**: NRDL `extract-quoted` handles these escapes.
 
 ## REGR-004: Escape Sequences in String Generation
 
-**Problem**: `generate-to` doesn't escape special characters in strings.
+**Status**: Pending
 
-**Required Behavior**:
-- Escape newlines, tabs, quotes, backslashes, and unprintable characters
-- `\t` for tab
-- `\n` for newline
-- `\r` for carriage return
-- `\f` for form feed
-- `\b` for backspace
-- `\"` for double quote
-- `\\` for backslash
-- `\uXXXX` for unprintable control characters
+**Problem**: `generate-to` does not escape special characters in strings.
 
-**Reference**: NRDL `inject-quoted` and `unprintable-p`:
-```lisp
-(defparameter *escape-characters*
-  '((#\Newline . #\n)
-    (#\Page . #\f)
-    (#\Backspace . #\b)
-    (#\Return . #\r)
-    (#\Tab . #\t)
-    (#\\ . #\\)))
+**Required Escapes**:
+- `"` → `\"`
+- `\` → `\\`
+- Newline → `\n`
+- Tab → `\t`
+- Carriage return → `\r`
+- Backspace → `\b`
+- Form feed → `\f`
+- Unprintable characters → `\uXXXX`
 
-(defun unprintable-p (chr)
-  (and
-    (not (whitespace-p chr))
-    (let ((code (char-code chr)))
-      (or (< code #x1f) (= code #x7f) ...))))
-```
+**Reference**: NRDL `inject-quoted` handles this with `*escape-characters*`.
 
-**Status**: [ ] Not started
+## REGR-005: Tests for JSON Scalar Edge Cases
 
----
+**Status**: Pending
 
-## Implementation Order
+**Problem**: Tests do not cover escape sequences or null/false distinction.
 
-1. **REGR-001**: Change API to streams only (breaking change, but clean)
-2. **REGR-002**: Distinguish null from false
-3. **REGR-003**: Add escape sequence parsing
-4. **REGR-004**: Add escape sequence generation
-
-Each should be committed separately with passing tests.
+**Required Tests**:
+- [ ] Parse `"hello\nworld"` → string with embedded newline
+- [ ] Parse `"quote\"escape"` → string with embedded quote
+- [ ] Parse `"path\\to\\file"` → string with embedded backslashes
+- [ ] Parse `"tab\there"` → string with embedded tab
+- [ ] Parse `"crlf\r\n"` → string with CR LF
+- [ ] Parse `"backspace\b"` → string with backspace char
+- [ ] Parse `"ff\f"` → string with form feed
+- [ ] Parse `"null"` → `cl:null`
+- [ ] Parse `"false"` → `nil`
+- [ ] Parse `"true"` → `t`
+- [ ] Generate `nil` → `"false"`
+- [ ] Generate `cl:null` → `"null"`
+- [ ] Generate string with newline → `"hello\nworld"`
