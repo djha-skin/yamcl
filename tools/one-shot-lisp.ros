@@ -1,12 +1,15 @@
 #!/bin/sh
 #|-*- mode:lisp -*-|#
 #|
-exec ros +Q -- $0 "$@"
+exec ros -- $0 "$@"
 |#
 
 (defpackage :ros.script.one-shot-lisp
   (:use :cl))
 (in-package :ros.script.one-shot-lisp)
+
+;; Load OCICL instead of Quicklisp (as per ~/.roswell/init.lisp)
+(load "/home/skin/.local/share/ocicl/ocicl-runtime.lisp")
 
 (defun main (&rest args)
   "Execute arbitrary Lisp code passed as the first argument.
