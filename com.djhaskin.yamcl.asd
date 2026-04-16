@@ -7,7 +7,9 @@
                )
   :components ((:module "src"
                 :components
-                ((:file "main"))))
+                ((:file "main")
+                 (:file "scalars"
+                  :depends-on ("main")))))
   :description
   "YAML Ain't Markup Language -- Common Lisp. A pure Common Lisp
 library for parsing and rendering YAML."

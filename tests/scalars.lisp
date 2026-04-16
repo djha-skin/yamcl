@@ -17,11 +17,9 @@
     #:isnt
     #:of-type
     #:finish)
-  (:import-from #:com.djhaskin.yamcl/utils)
   (:import-from #:com.djhaskin.yamcl/scalars)
   (:local-nicknames
     (#:parachute #:org.shirakumo.parachute)
-    (#:utils     #:com.djhaskin.yamcl/utils)
     (#:scalars   #:com.djhaskin.yamcl/scalars)))
 
 (in-package #:com.djhaskin.yamcl/tests/scalars)
