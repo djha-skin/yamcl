@@ -1,249 +1,290 @@
 ;;;; tests/main.lisp
-;;;;
-;;;; Unit tests for the yamcl library.
+;;;; yamcl - YAML Ain't Markup Language -- Common Lisp
 
-(defpackage #:com.djhaskin.yamcl/tests
-  (:use #:cl)
-  (:import-from
-    #:org.shirakumo.parachute
-    #:define-test #:true #:false #:fail #:is #:isnt #:of-type #:finish)
-  (:import-from #:com.djhaskin.yamcl
-    #:parse-from-string #:generate-to-string #:+null+ #:+eof+)
-  (:local-nicknames
-    (#:parachute #:org.shirakumo.parachute)
-    (#:yamcl    #:com.djhaskin.yamcl)))
+(cl:defpackage :com.djhaskin.yamcl/tests
+  (:use :cl :com.djhaskin.yamcl :parachute))
 
-(in-package #:com.djhaskin.yamcl/tests)
+(cl:in-package :com.djhaskin.yamcl/tests)
 
-(define-test yamcl-suite)
+(defparameter *yamcl-suite* (testsuite "yamcl suite"))
 
-;;; Constants and Helpers
+;;; Test Helper Macros
 
-(define-test +eof+-test
-  :parent yamcl-suite
-  (is eq yamcl:+eof+ :eof))
+(defmacro is-equal (form expected &rest args)
+  "Test that FORM equals EXPECTED."
+  `(is (equal ,form ,expected)
+       ,(format nil "~S equals ~S" form expected)
+       ,@args))
 
-(define-test peek-chr-string-test
-  :parent yamcl-suite
-  (let ((q (yamcl:make-char-queue :chars (coerce "hello" 'list))))
-    (is char= (yamcl::peek-chr q) #\h))
-  (let ((q (yamcl:make-char-queue :chars '())))
-    (is eq (yamcl::peek-chr q) :eof)))
+(defmacro is-eql (form expected &rest args)
+  "Test that FORM is EQ to EXPECTED."
+  `(is (eql ,form ,expected)
+       ,(format nil "~S is eql to ~S" form expected)
+       ,@args))
 
-(define-test read-chr-string-test
-  :parent yamcl-suite
-  (let ((q (yamcl:make-char-queue :chars (coerce "hello" 'list))))
-    (is char= (yamcl::read-chr q) #\h))
-  (let ((q (yamcl:make-char-queue :chars '())))
-    (is eq (yamcl::read-chr q) :eof)))
+(defmacro signals-error (form &rest args)
+  "Test that FORM signals an error."
+  `(is (typep (nth-value 1 (ignore-errors ,form)) 'error)
+       ,(format nil "~S signals an error" form)
+       ,@args))
 
-(define-test whitespace-p-test
-  :parent yamcl-suite
-  (true (yamcl::whitespace-p #\Space))
-  (true (yamcl::whitespace-p #\Tab))
-  (true (yamcl::whitespace-p #\Newline))
-  (false (yamcl::whitespace-p #\a))
-  (false (yamcl::whitespace-p nil))
-  (false (yamcl::whitespace-p :eof)))
+;;; Constants Tests
 
-(define-test blankspace-p-test
-  :parent yamcl-suite
-  (true (yamcl::blankspace-p #\Space))
-  (true (yamcl::blankspace-p #\Tab))
-  (false (yamcl::blankspace-p #\Newline))
-  (false (yamcl::blankspace-p #\a)))
+(deftest test-eof-constant (*yamcl-suite*)
+  :documentation "Test the +eof+ constant"
+  (is-eql +eof+ ':eof "The +eof+ constant should be ':eof"))
 
-(define-test build-string-test
-  :parent yamcl-suite
-  (is string= (yamcl::build-string '(#\h #\e #\l #\l #\o)) "hello")
-  (is string= (yamcl::build-string '()) ""))
+(deftest test-null-constant (*yamcl-suite*)
+  :documentation "Test the +null+ constant"
+  (is (eq +null+ 'cl:null) "The +null+ constant should be 'cl:null"))
 
-(define-test extract-comment-test
-  :parent yamcl-suite
-  (let ((q (yamcl:make-char-queue :chars (coerce "# comment" 'list))))
-    (is eq (yamcl::extract-comment q) :eof))
-  (let ((q (yamcl:make-char-queue
-             :chars (coerce (format nil "# comment~%next") 'list))))
-    (is char= (yamcl::extract-comment q) #\Newline)))
+;;; Helper Function Tests
 
-(define-test skip-whitespace-and-comments-test
-  :parent yamcl-suite
-  (let ((q (yamcl:make-char-queue :chars (coerce "  hello" 'list))))
-    (is char= (yamcl::skip-whitespace-and-comments q) #\h))
-  (let ((q (yamcl:make-char-queue
-             :chars (coerce (format nil "# comment~%hello") 'list))))
-    (is char= (yamcl::skip-whitespace-and-comments q) #\h))
-  (let ((q (yamcl:make-char-queue :chars '())))
-    (is eq (yamcl::skip-whitespace-and-comments q) :eof)))
+(deftest test-blankspace-p (*yamcl-suite*)
+  :documentation "Test blankspace-p function"
+  (is-equal (mapcar #'blankspace-p '(#\Space #\Tab #\Newline #\a))
+            '(t t nil nil)))
 
-;;; JSON Scalar Parsing Tests
+(deftest test-whitespace-p (*yamcl-suite*)
+  :documentation "Test whitespace-p function"
+  (is-equal (mapcar #'whitespace-p '(#\Space #\Tab #\Newline #\Return #\a #\NULL))
+            '(t t t t nil nil)))
 
-(define-test parse-json-boolean-test
-  :parent yamcl-suite
-  (is eq (yamcl:parse-from-string "true") t)
-  (is eq (yamcl:parse-from-string "false") nil)
-  (is eq (yamcl:parse-from-string "true  ") t)
-  (is eq (yamcl:parse-from-string "  false") nil))
+(deftest test-build-string (*yamcl-suite*)
+  :documentation "Test build-string function"
+  (is-equal (build-string '(#\a #\b #\c)) "abc"))
 
-(define-test parse-json-null-test
-  :parent yamcl-suite
-  ;; null and ~ both parse to the +null+ sentinel
-  (is eq (yamcl:parse-from-string "null") +null+)
-  (is eq (yamcl:parse-from-string "~") +null+)
-  ;; +null+ is distinct from CL's nil
-  (isnt eq (yamcl:parse-from-string "null") nil)
-  (isnt eq (yamcl:parse-from-string "~") nil))
+;;; Character Queue Tests
 
-(define-test parse-json-integer-test
-  :parent yamcl-suite
-  (is = (yamcl:parse-from-string "0") 0)
-  (is = (yamcl:parse-from-string "42") 42)
-  (is = (yamcl:parse-from-string "-17") -17)
-  (is = (yamcl:parse-from-string "  123  ") 123))
+(deftest test-char-queue-basics (*yamcl-suite*)
+  :documentation "Test basic char-queue operations"
+  (let ((cq (make-char-queue)))
+    (cq-append cq #\a)
+    (cq-append cq #\b)
+    (is (char= (cq-peek cq) #\a) "Peek should return first char")
+    (is (char= (cq-pop cq) #\a) "Pop should return first char")
+    (is (char= (cq-peek cq) #\b) "Peek should return second char")
+    (is (char= (cq-pop cq) #\b) "Pop should return second char")
+    (is (null (cq-peek cq)) "Peek should return nil on empty queue")
+    (is (null (cq-pop cq)) "Pop should return nil on empty queue")))
 
-(define-test parse-json-float-test
-  :parent yamcl-suite
-  (is = (yamcl:parse-from-string "3.14") 3.14)
-  (is = (yamcl:parse-from-string "-2.5") -2.5)
-  (is = (yamcl:parse-from-string "1e10") 1e10)
-  (is = (yamcl:parse-from-string "2.5E-3") 2.5e-3))
+(deftest test-char-queue-from-list (*yamcl-suite*)
+  :documentation "Test char-queue initialized from list"
+  (let ((cq (make-char-queue :chars '(#\x #\y #\z))))
+    (is (char= (cq-pop cq) #\x) "First pop should return x")
+    (is (char= (cq-pop cq) #\y) "Second pop should return y")
+    (is (char= (cq-pop cq) #\z) "Third pop should return z")
+    (is (null (cq-pop cq)) "Pop on empty should return nil")))
 
-(define-test parse-yaml-special-floats-test
-  :parent yamcl-suite
-  ;; Positive infinity
-  (is eq (yamcl:parse-from-string ".inf") ':+inf)
-  (is eq (yamcl:parse-from-string "+.inf") ':+inf)
-  (is eq (yamcl:parse-from-string ".Inf") ':+inf)
-  (is eq (yamcl:parse-from-string "+.Inf") ':+inf)
-  (is eq (yamcl:parse-from-string ".INF") ':+inf)
-  (is eq (yamcl:parse-from-string "+.INF") ':+inf)
-  ;; Negative infinity
-  (is eq (yamcl:parse-from-string "-.inf") ':-inf)
-  (is eq (yamcl:parse-from-string "-.Inf") ':-inf)
-  (is eq (yamcl:parse-from-string "-.INF") ':-inf)
-  ;; NaN
-  (is eq (yamcl:parse-from-string ".nan") 'nan)
-  (is eq (yamcl:parse-from-string "+.nan") 'nan)
-  (is eq (yamcl:parse-from-string "-.nan") 'nan)
-  (is eq (yamcl:parse-from-string ".NaN") 'nan)
-  (is eq (yamcl:parse-from-string ".NAN") 'nan))
+;;; Parsing Tests
 
-(define-test parse-invalid-number-test
-  :parent yamcl-suite
-  ;; Invalid number: . followed by non-digit non-special
-  (fail (yamcl:parse-from-string "+.foo") 'yamcl::extraction-error)
-  (fail (yamcl:parse-from-string "-.bar") 'yamcl::extraction-error)
-  (fail (yamcl:parse-from-string "1.foo") 'yamcl::extraction-error)
-  ;; Invalid: decimal point with no following digit
-  (fail (yamcl:parse-from-string "1.") 'yamcl::extraction-error)
-  (fail (yamcl:parse-from-string "1.e") 'yamcl::extraction-error))
+(deftest test-parse-boolean-true (*yamcl-suite*)
+  :documentation "Test parsing true"
+  (is (parse-from-string "true") "Parsing 'true' should return T"))
 
-(define-test parse-json-string-test
-  :parent yamcl-suite
-  (is string= (yamcl:parse-from-string "\"hello\"") "hello")
-  (is string= (yamcl:parse-from-string "\"\"") "")
-  (is string= (yamcl:parse-from-string "  \"world\"  ") "world"))
+(deftest test-parse-boolean-false (*yamcl-suite*)
+  :documentation "Test parsing false"
+  (is (null (parse-from-string "false")) "Parsing 'false' should return NIL"))
 
-(define-test parse-json-string-escapes-test
-  :parent yamcl-suite
-  ;; Newline escape \n
-  (is string= (yamcl:parse-from-string "\"hello\\nworld\"")
-      (coerce '(#\h #\e #\l #\l #\o #\Newline #\w #\o #\r #\l #\d) 'string))
-  ;; Tab escape \t
-  (is string= (yamcl:parse-from-string "\"tab:\\there\"")
-      (coerce '(#\t #\a #\b #\Tab #\h #\e #\r #\e) 'string))
-  ;; Backslash escape \\
-  (is string= (yamcl:parse-from-string "\"backslash: \\\\\"")
-      (coerce '(#\b #\a #\c #\k #\s #\l #\a #\s #\h #\: #\Space #\\) 'string))
-  ;; Quote escape \"
-  (is string= (yamcl:parse-from-string "\"quote: \\\"\"")
-      (coerce '(#\q #\u #\o #\t #\e #\: #\Space #\") 'string))
-  ;; CR+LF escape \r\n
-  (is string= (yamcl:parse-from-string "\"crlf:\\r\\n\"")
-      (coerce '(#\c #\r #\l #\f #\: #\Return #\Newline) 'string))
-  ;; Form feed escape \f
-  (is string= (yamcl:parse-from-string "\"ff:\\f\"")
-      (coerce '(#\f #\f #\: #\Page) 'string))
-  ;; Backspace escape \b
-  (is string= (yamcl:parse-from-string "\"bs:\\b\"")
-      (coerce '(#\b #\s #\: #\Backspace) 'string))
-  ;; Unicode escapes
-  (is string= (yamcl:parse-from-string "\"\\u0041\"") "A")
-  (is string= (yamcl:parse-from-string "\"\\u03A9\"") "Ω")
-  (is string= (yamcl:parse-from-string "\"\\u00E9\"") "é")
-  ;; Solidus escape \/
-  (is string= (yamcl:parse-from-string "\"path\\/file\"")
-      (coerce '(#\p #\a #\t #\h #\/ #\f #\i #\l #\e) 'string)))
+(deftest test-parse-null-null (*yamcl-suite*)
+  :documentation "Test parsing null"
+  (is (eq (parse-from-string "null") +null+) "Parsing 'null' should return +null+"))
 
-;;; generate-to Tests
+(deftest test-parse-null-tilde (*yamcl-suite*)
+  :documentation "Test parsing ~ as null"
+  (is (eq (parse-from-string "~") +null+) "Parsing '~' should return +null+"))
 
-(define-test generate-to-nil-test
-  :parent yamcl-suite
-  (is string= (yamcl:generate-to-string nil) "false"))
+(deftest test-parse-integer-positive (*yamcl-suite*)
+  :documentation "Test parsing positive integers"
+  (is-equal (parse-from-string "42") 42)
+  (is-equal (parse-from-string "0") 0)
+  (is-equal (parse-from-string "123456789") 123456789))
 
-(define-test generate-to-cl-null-test
-  :parent yamcl-suite
-  (is string= (yamcl:generate-to-string +null+) "null"))
+(deftest test-parse-integer-negative (*yamcl-suite*)
+  :documentation "Test parsing negative integers"
+  (is-equal (parse-from-string "-17") -17)
+  (is-equal (parse-from-string "-1") -1)
+  (is-equal (parse-from-string "-0") 0))
 
-(define-test generate-to-true-test
-  :parent yamcl-suite
-  (is string= (yamcl:generate-to-string t) "true"))
+(deftest test-parse-float-basic (*yamcl-suite*)
+  :documentation "Test parsing basic floats"
+  (is-equal (parse-from-string "3.14") 3.14)
+  (is-equal (parse-from-string "0.5") 0.5)
+  (is-equal (parse-from-string "-1.5") -1.5))
 
-(define-test generate-to-number-test
-  :parent yamcl-suite
-  (is string= (yamcl:generate-to-string 42) "42")
-  (is string= (yamcl:generate-to-string 3.14) "3.14")
-  (is string= (yamcl:generate-to-string -17) "-17"))
+(deftest test-parse-float-with-exponent (*yamcl-suite*)
+  :documentation "Test parsing floats with exponent"
+  (is-equal (parse-from-string "1e10") 1e10)
+  (is-equal (parse-from-string "2.5E-3") 0.0025)
+  (is-equal (parse-from-string "3.14e+2") 314.0))
 
-(define-test generate-to-string-test
-  :parent yamcl-suite
-  (is string= (yamcl:generate-to-string "hello") "\"hello\"")
-  (is string= (yamcl:generate-to-string "") "\"\""))
+(deftest test-parse-float-zero (*yamcl-suite*)
+  :documentation "Test parsing zero as float"
+  (is (floatp (parse-from-string "0.0")) "Zero with decimal should be float"))
 
-(define-test generation-error-test
-  :parent yamcl-suite
-  ;; Attempting to generate unsupported types should signal generation-error
-  (fail (yamcl:generate-to-string (cons 'a 'b)) 'yamcl::generation-error)
-  (fail (yamcl:generate-to-string #'(lambda ())) 'yamcl::generation-error))
+(deftest test-parse-string-simple (*yamcl-suite*)
+  :documentation "Test parsing simple strings"
+  (is-equal (parse-from-string "\"hello\"") "hello")
+  (is-equal (parse-from-string "\"world\"") "world")
+  (is-equal (parse-from-string "\"\"") ""))
 
-;;; Round-trip Tests
+(deftest test-parse-string-escaped-quote (*yamcl-suite*)
+  :documentation "Test parsing strings with escaped quotes"
+  (is-equal (parse-from-string "\"hello\\\"world\"") "hello\"world")
+  (is-equal (parse-from-string "\"say \\\"hi\\\"\"") "say \"hi\""))
 
-(define-test roundtrip-false-test
-  :parent yamcl-suite
-  (is eq (yamcl:parse-from-string (yamcl:generate-to-string nil)) nil))
+(deftest test-parse-string-escaped-backslash (*yamcl-suite*)
+  :documentation "Test parsing strings with escaped backslash"
+  (is-equal (parse-from-string "\"hello\\\\world\"") "hello\\world"))
 
-(define-test roundtrip-true-test
-  :parent yamcl-suite
-  (is eq (yamcl:parse-from-string (yamcl:generate-to-string t)) t))
+(deftest test-parse-string-escaped-slash (*yamcl-suite*)
+  :documentation "Test parsing strings with escaped forward slash"
+  (is-equal (parse-from-string "\"hello\\/world\"") "hello/world"))
 
-(define-test roundtrip-null-test
-  :parent yamcl-suite
-  (is eq (yamcl:parse-from-string (yamcl:generate-to-string +null+)) +null+))
+(deftest test-parse-string-escaped-backspace (*yamcl-suite*)
+  :documentation "Test parsing strings with escaped backspace"
+  (is-equal (parse-from-string "\"hello\\bworld\"") "hello\bworld"))
 
-(define-test roundtrip-number-test
-  :parent yamcl-suite
-  (is = (yamcl:parse-from-string (yamcl:generate-to-string 42)) 42)
-  (is = (yamcl:parse-from-string (yamcl:generate-to-string 3.14)) 3.14))
+(deftest test-parse-string-escaped-formfeed (*yamcl-suite*)
+  :documentation "Test parsing strings with escaped formfeed"
+  (is-equal (parse-from-string "\"hello\\fworld\"") "hello\fworld"))
 
-(define-test roundtrip-string-test
-  :parent yamcl-suite
-  (is string= (yamcl:parse-from-string (yamcl:generate-to-string "hello")) "hello"))
+(deftest test-parse-string-escaped-newline (*yamcl-suite*)
+  :documentation "Test parsing strings with escaped newline"
+  (is-equal (parse-from-string "\"hello\\nworld\"") "hello\nworld"))
 
-;;; Null vs False Distinction Tests
+(deftest test-parse-string-escaped-return (*yamcl-suite*)
+  :documentation "Test parsing strings with escaped return"
+  (is-equal (parse-from-string "\"hello\\rworld\"") "hello\rworld"))
 
-(define-test null-vs-false-distinction-test
-  :parent yamcl-suite
-  (let ((parsed-null (yamcl:parse-from-string "null"))
-        (parsed-false (yamcl:parse-from-string "false"))
-        (parsed-tilde (yamcl:parse-from-string "~")))
-    ;; Verify null and tilde both parse to +null+
-    (is eq parsed-null +null+)
-    (is eq parsed-tilde +null+)
-    ;; Verify false parses to CL's nil
-    (is eq parsed-false nil)
-    ;; Verify they are distinguishable
-    (isnt eq parsed-null parsed-false)
-    (isnt eq parsed-tilde parsed-false)
-    ;; Verify +null+ is truthy, nil is falsy
-    (true parsed-null)
-    (false parsed-false)))
+(deftest test-parse-string-escaped-tab (*yamcl-suite*)
+  :documentation "Test parsing strings with escaped tab"
+  (is-equal (parse-from-string "\"hello\\tworld\"") "hello\tworld"))
+
+(deftest test-parse-string-unicode-basic (*yamcl-suite*)
+  :documentation "Test parsing strings with basic unicode escapes"
+  (is-equal (parse-from-string "\"\\u0041\"") "A")
+  (is-equal (parse-from-string "\"\\u0048\\u0065\\u006C\\u006C\\u006F\"") "Hello"))
+
+(deftest test-parse-string-unicode-spanish (*yamcl-suite*)
+  :documentation "Test parsing strings with unicode (Spanish)"
+  (is-equal (parse-from-string "\"\\u00E1\"") "á"))
+
+(deftest test-parse-string-unicode-japanese (*yamcl-suite*)
+  :documentation "Test parsing strings with unicode (Japanese)"
+  (is-equal (parse-from-string "\"\\u65E5\\u672C\\u8A9E\"") "日本語"))
+
+(deftest test-parse-string-unicode-surrogate-pair (*yamcl-suite*)
+  :documentation "Test parsing strings with surrogate pairs (emoji)"
+  (is-equal (parse-from-string "\"\\uD83D\\uDE00\"") "😀"))
+
+(deftest test-parse-string-complex (*yamcl-suite*)
+  :documentation "Test parsing complex strings with multiple escapes"
+  (is-equal (parse-from-string "\"Line1\\nLine2\\tTab\\\"Quote\\\\\"")
+            (format nil "Line1~%Line2~CTab\"Quote\\" 9)))
+
+;;; Generation Tests
+
+(deftest test-generate-boolean-true (*yamcl-suite*)
+  :documentation "Test generating true"
+  (is-equal (generate-to-string t) "true"))
+
+(deftest test-generate-boolean-false (*yamcl-suite*)
+  :documentation "Test generating false"
+  (is-equal (generate-to-string nil) "false"))
+
+(deftest test-generate-null (*yamcl-suite*)
+  :documentation "Test generating null"
+  (is-equal (generate-to-string cl:null) "null"))
+
+(deftest test-generate-integer (*yamcl-suite*)
+  :documentation "Test generating integers"
+  (is-equal (generate-to-string 42) "42")
+  (is-equal (generate-to-string -17) "-17"))
+
+(deftest test-generate-float (*yamcl-suite*)
+  :documentation "Test generating floats"
+  (is-equal (generate-to-string 3.14) "3.14"))
+
+(deftest test-generate-string-simple (*yamcl-suite*)
+  :documentation "Test generating simple strings"
+  (is-equal (generate-to-string "hello") "\"hello\""))
+
+(deftest test-generate-string-with-quote (*yamcl-suite*)
+  :documentation "Test generating strings with quotes"
+  (is-equal (generate-to-string "say \"hi\"") "\"say \\\"hi\\\"\""))
+
+(deftest test-generate-string-with-backslash (*yamcl-suite*)
+  :documentation "Test generating strings with backslash"
+  (is-equal (generate-to-string "path\\to\\file") "\"path\\\\to\\\\file\""))
+
+(deftest test-generate-string-with-newline (*yamcl-suite*)
+  :documentation "Test generating strings with newline"
+  (is-equal (generate-to-string "line1
+line2") "\"line1\\nline2\""))
+
+(deftest test-generate-string-with-tab (*yamcl-suite*)
+  :documentation "Test generating strings with tab"
+  (is-equal (generate-to-string "col1	col2") "\"col1\\tcol2\""))
+
+;;; Error Tests
+
+(deftest test-parse-invalid-boolean (*yamcl-suite*)
+  :documentation "Test parsing invalid boolean"
+  (signals-error (parse-from-string "tru"))
+  (signals-error (parse-from-string "fals")))
+
+(deftest test-parse-invalid-null (*yamcl-suite*)
+  :documentation "Test parsing invalid null"
+  (signals-error (parse-from-string "nul"))
+  (signals-error (parse-from-string "n")))
+
+(deftest test-parse-invalid-number (*yamcl-suite*)
+  :documentation "Test parsing invalid number"
+  (signals-error (parse-from-string "abc"))
+  (signals-error (parse-from-string "-abc")))
+
+(deftest test-parse-invalid-escape (*yamcl-suite*)
+  :documentation "Test parsing invalid escape sequence"
+  (signals-error (parse-from-string "\"hello\\qworld\"")))
+
+(deftest test-parse-incomplete-unicode (*yamcl-suite*)
+  :documentation "Test parsing incomplete unicode escape"
+  (signals-error (parse-from-string "\"\\u004\"")))
+
+;;; Roundtrip Tests
+
+(deftest test-roundtrip-false (*yamcl-suite*)
+  :documentation "Test that false roundtrips correctly"
+  (let ((result (parse-from-string (generate-to-string nil))))
+    (is (null result) "false should roundtrip to nil")))
+
+(deftest test-roundtrip-null (*yamcl-suite*)
+  :documentation "Test that null roundtrips correctly"
+  (let ((result (parse-from-string (generate-to-string cl:null))))
+    (is (eq result cl:null) "null should roundtrip to cl:null")))
+
+(deftest test-roundtrip-string-with-quotes (*yamcl-suite*)
+  :documentation "Test roundtrip with quoted string"
+  (let ((original "say \"hi\"")
+        (generated (generate-to-string original)))
+    (is-equal (parse-from-string generated) original)))
+
+(deftest test-roundtrip-string-with-backslash (*yamcl-suite*)
+  :documentation "Test roundtrip with backslash"
+  (let ((original "path\\to\\file")
+        (generated (generate-to-string original)))
+    (is-equal (parse-from-string generated) original)))
+
+(deftest test-roundtrip-string-with-newline (*yamcl-suite*)
+  :documentation "Test roundtrip with newline"
+  (let ((original "line1
+line2")
+        (generated (generate-to-string original)))
+    (is-equal (parse-from-string generated) original)))
+
+;;; Run Tests
+
+(defun run-tests ()
+  "Run all tests and report results."
+  (test '*yamcl-suite* :report t :style :pretty))

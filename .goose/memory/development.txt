@@ -1,0 +1,21 @@
+# common-lisp yamcl ocicl quicklisp roswell
+yamcl project uses OCICL, NOT Quicklisp. Tooling in ~/.roswell/init.lisp manages this. When running one-shot-lisp.ros, OCICL should be used, not Quicklisp.
+
+# yamcl api-design nrdl parsing
+yamcl API design: parse-from and generate-to take STREAM arguments. Wrapper functions parse-from-string and generate-to-string provide string convenience using with-input-from-string and with-output-to-string. NRDL (../nrdl/cl/main.lisp) uses this pattern - consult it for implementation guidance.
+
+# yamcl jzon null-handling false-handling sentinels
+yamcl: jzon-like behavior for null. YAML `null` or `~` → `+null+` sentinel (exported). YAML `false` → CL's nil (falsy). YAML `true` → CL's t (truthy). `:+inf`, `:-inf`, and `nan` are also used as sentinel values for special floats.
+
+# ocicl quicklisp yaml common-lisp yamcl api-design
+yamlcl project uses OCICL, not Quicklisp. Quicklisp is explicitly turned off in ~/.roswell/init.lisp. JSON false → CL's nil, JSON null → symbol CL:NULL (not CL's nil). API: parse-from and generate-to take streams, not strings. Wrapper functions parse-from-string and generate-to-string wrap them.
+
+# yamcl common-lisp ocicl yaml
+yamcl project key learnings: 1) We use OCICL, NOT Quicklisp. ~/.roswell/init.lisp manages this. 2) cl:null is an out-of-band symbol (not cl:nil) for YAML null. nil is CL's false. t is CL's true. 3) parse-from and generate-to take streams, with wrapper functions for string convenience. 4) JSON escape handling per RFC 8259 section 7. Reference NRDL implementation at ../nrdl/cl/main.lisp
+
+# yamcl null false parsing
+yamcl null vs false: Parse 'null' → cl:null (the symbol, out-of-band). Parse 'false' → nil (CL's nil). Reference NRDL convert-to-symbol function.
+
+# yaml lisp api escaping
+yamcl: OCICL, not Quicklisp. parse-from/generate-to take STREAMs only (wrap with with-input-from-string/with-output-to-string). null → cl:null, false → nil, true → t. Escape sequences per RFC 8259 Section 7.
+

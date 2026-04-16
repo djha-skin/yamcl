@@ -1,0 +1,16 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -- $0 "$@"
+|#
+
+(defpackage :ros.script.test-ocicl
+  (:use :cl))
+
+(in-package :ros.script.test-ocicl)
+
+(defun main (&rest argv)
+  (declare (ignorable argv))
+  (format t "~A~%" *package*)
+  (format t "~A~%" (lisp-implementation-type))
+  (format t "~A~%" (ql:quickload 'ocicl)))

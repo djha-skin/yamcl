@@ -1,0 +1,14 @@
+#!/usr/bin/env -S ros -L sbcl --script
+
+(handler-bind
+    (#+sbcl
+     (sb-kernel:redefinition-warning #'muffle-warning)
+     (style-warning #'muffle-warning))
+  (load (merge-pathnames "tools/ocicl-init.lisp" (uiop:getcwd))))
+
+(push (uiop:getcwd) asdf:*central-registry*)
+(asdf:load-asd "com.djhaskin.yamcl.asd")
+(asdf:load-system :com.djhaskin.yamcl/tests)
+
+(format t "~%Running tests...~%")
+(parachute:test :com.djhaskin.yamcl/tests :report t)

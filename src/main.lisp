@@ -1,275 +1,460 @@
-;;;; main.lisp -- Reference Implementation Parser for YAML in Common Lisp
-;;;;
-;;;; SPDX-FileCopyrightText: 2024 Daniel Jay Haskin
-;;;; SPDX-License-Identifier: MIT
+;;;; src/main.lisp
+;;;; yamcl - YAML Ain't Markup Language -- Common Lisp
 
-(in-package #:cl-user)
-
-(defpackage #:com.djhaskin.yamcl (:use #:cl)
-  (:documentation "YAML Ain't Markup Language -- Common Lisp.")
-  (:import-from #:alexandria)
+(cl:defpackage :com.djhaskin.yamcl
+  (:use :cl)
   (:export
-    parse-from parse-from-string
-    generate-to generate-to-string
-    +eof+ +null+ extraction-error generation-error
-    make-char-queue char-queue-peek char-queue-pop))
+   ;; Constants
+   :+eof+
+   :+null+
+   ;; Parsing
+   :parse-from
+   :parse-from-string
+   ;; Generation
+   :generate-to
+   :generate-to-string
+   ;; Conditions
+   :extraction-error
+   :extraction-error-format
+   :extraction-error-args
+   ;; Structures
+   :char-queue
+   :char-queue-chars))
 
-(in-package #:com.djhaskin.yamcl)
-
-(defconstant +eof+ :eof)
-
-(defconstant +null+ '+null+
-  "Sentinel value representing YAML null.")
+(cl:in-package :com.djhaskin.yamcl)
 
 (define-condition extraction-error (error)
-  ((expected :initarg :expected :reader expected)
-   (got :initarg :got :reader got))
-  (:report (lambda (c s)
-             (format s "Expected ~A; got ~A"
-                     (expected c) (got c)))))
+  ((format
+    :initarg :format
+    :reader extraction-error-format)
+   (args
+    :initarg :args
+    :reader extraction-error-args
+    :initform nil))
+  (:report (lambda (condition stream)
+             (format stream
+                     (extraction-error-format condition)
+                     (apply #'format nil
+                            (extraction-error-args condition))))))
 
-(define-condition generation-error (error)
-  ((expected :initarg :expected :reader expected)
-   (got :initarg :got :reader got))
-  (:report (lambda (c s)
-             (format s "Cannot generate ~A; got ~A"
-                     (expected c) (got c)))))
+;;; Constants
 
-(deftype streamable () '(or stream string list char-queue))
-(deftype streamed () '(or character (member :eof) null))
+(defconstant +eof+ ':eof)
+(defconstant +null+ 'cl:null)
 
-(defstruct char-queue (chars nil :type list))
+;;; Character Queue
 
-(defun char-queue-peek (q)
-  (if (null (char-queue-chars q)) +eof+
-      (car (char-queue-chars q))))
+(defstruct char-queue
+  (chars nil :type list))
 
-(defun char-queue-pop (q)
-  (if (null (char-queue-chars q)) +eof+
-      (pop (char-queue-chars q))))
+(defun cq-append (cq char)
+  "Append a character to the end of a char-queue."
+  (push char (char-queue-chars cq)))
 
-(declaim (inline peek-chr read-chr))
+(defun cq-peek (cq)
+  "Peek at the next character without consuming it."
+  (let ((chars (char-queue-chars cq)))
+    (when chars
+      (car chars))))
 
-(defun peek-chr (strm)
-  (cond
-    ((stringp strm)
-     (if (= (length strm) 0) +eof+ (char strm 0)))
-    ((listp strm)
-     (if (null strm) +eof+ (car strm)))
-    ((char-queue-p strm) (char-queue-peek strm))
-    (t (peek-char nil strm nil +eof+ nil))))
+(defun cq-pop (cq)
+  "Pop and return the next character."
+  (pop (char-queue-chars cq)))
 
-(defun read-chr (strm)
-  (cond
-    ((stringp strm)
-     (prog1 (peek-chr strm)
-            (setf strm (if (> (length strm) 0)
-                           (subseq strm 1) ""))))
-    ((listp strm)
-     (if (null strm) +eof+ (pop strm)))
-    ((char-queue-p strm) (char-queue-pop strm))
-    (t (read-char strm nil +eof+ nil))))
+;;; Input/Output
 
-(defun build-string (lst)
-  (let* ((size (length lst))
-         (building (make-string size)))
-    (loop for l in lst
-          for j from 0 below size
-          do (setf (elt building j) l))
-    building))
+(defun peek-chr (source)
+  "Peek at the next character in SOURCE without consuming it.
+SOURCE can be a stream, string, list, or char-queue.
+Returns +eof+ at end of input."
+  (etypecase source
+    (stream
+     (let ((ch (peek-char nil source nil +eof+)))
+       (if (eq ch +eof+) +eof+ ch)))
+    (string
+     (let ((ch (char source 0)))
+       (if (eq ch #\NULL) +eof+ ch)))
+    (list
+     (if source (car source) +eof+))
+    (char-queue
+     (cq-peek source))))
 
-(defun blankspace-p (chr)
-  (or (char= chr #\Tab) (char= chr #\Space)))
+(defun read-chr (source)
+  "Read and return the next character from SOURCE, consuming it.
+SOURCE can be a stream, string, list, or char-queue.
+Returns +eof+ at end of input."
+  (etypecase source
+    (stream
+     (let ((ch (read-char source nil +eof+)))
+       (if (eq ch +eof+) +eof+ ch)))
+    (string
+     (let ((ch (char source 0)))
+       (if (eq ch #\NULL)
+           +eof+
+           (subseq source 1))))
+    (list
+     (if source (pop source) +eof+))
+    (char-queue
+     (cq-pop source))))
 
-(defun whitespace-p (chr)
-  (cond
-    ((null chr) nil)
-    ((eq chr +eof+) nil)
-    (t (or (char= chr #\Newline) (char= chr #\Return)
-           (char= chr #\Page) (blankspace-p chr)))))
+;;; Helper Functions
 
-(defun extract-comment (strm)
-  (loop with last-read = (read-chr strm)
-        while (not (eq last-read +eof+))
-        do (cond
-             ((char= last-read #\Newline) (return last-read))
-             ((char= last-read #\Return)
-              (let ((next (peek-chr strm)))
-                (when (char= next #\Newline) (read-chr strm))
-                (return #\Newline)))
-             (t (setf last-read (read-chr strm))))
-        finally (return +eof+)))
+(defun blankspace-p (ch)
+  "Check if character is a blankspace (space or tab)."
+  (or (char= ch #\Space) (char= ch #\Tab)))
 
-(defun skip-whitespace-and-comments (strm)
-  (loop with next = (peek-chr strm)
-        while (and (not (eq next +eof+))
-                   (or (whitespace-p next) (char= next #\#)))
-        do (cond
-             ((char= next #\#) (extract-comment strm))
-             (t (read-chr strm)))
-           (setf next (peek-chr strm))
-        finally (return next)))
+(defun whitespace-p (ch)
+  "Check if character is any whitespace."
+  (when (characterp ch)
+    (or (char= ch #\Newline)
+        (char= ch #\Return)
+        (char= ch #\Tab)
+        (char= ch #\Space)
+        (blankspace-p ch))))
 
-(defun extract-while (strm pred)
-  (loop with chars = nil
-        for chr = (peek-chr strm)
-        while (and (not (eq chr +eof+)) (funcall pred chr))
-        do (push (read-chr strm) chars)
-        finally (return (nreverse chars))))
+(defun build-string (list)
+  "Build a string from a list of characters, reversing the list."
+  (coerce (reverse list) 'string))
 
-(defun extract-word (strm)
-  (build-string
-    (extract-while strm (lambda (c)
-                          (or (alpha-char-p c) (digit-char-p c))))))
+;;; Comment Handling
 
-(defun parse-boolean (strm)
-  (let ((word (extract-word strm)))
+(defun extract-comment (source)
+  "Extract a comment from SOURCE starting with #.
+Returns the comment text as a string without the leading #.
+Leaves SOURCE positioned after the newline or end of input."
+  (let ((acc nil)
+        (ch (peek-chr source)))
+    (loop while (and (characterp ch)
+                     (not (char= ch #\Newline))
+                     (not (eq ch +eof+)))
+          do (push ch acc)
+             (read-chr source)
+             (setf ch (peek-chr source)))
+    (build-string acc)))
+
+(defun skip-whitespace-and-comments (source)
+  "Skip blankspaces, newlines, and comments in SOURCE.
+Returns the first non-skipped character (peeked)."
+  (let ((ch (peek-chr source)))
+    (loop while (or (blankspace-p ch)
+                    (char= ch #\Newline)
+                    (char= ch #\,)
+                    (char= ch #\#))
+          do (cond
+               ((or (blankspace-p ch) (char= ch #\,))
+                (read-chr source))
+               ((char= ch #\Newline)
+                (read-chr source))
+               ((char= ch #\#)
+                (read-chr source)
+                (extract-comment source)))
+             (setf ch (peek-chr source)))
+    ch))
+
+;;; JSON Scalar Parsing
+
+(defun parse-boolean (source)
+  "Parse a boolean value (true/false) from SOURCE.
+Returns T or NIL."
+  (let* ((acc nil)
+         (ch (read-chr source)))
+    (push ch acc)
+    (loop repeat 3
+          do (setf ch (read-chr source))
+             (push ch acc))
+    (let ((word (build-string acc)))
+      (cond
+        ((string= word "true") t)
+        ((string= word "false") nil)
+        (t
+         (error 'extraction-error
+                :format "Expected boolean, got: ~A"
+                :args (list word)))))))
+
+(defun parse-null (source)
+  "Parse a null value from SOURCE.
+Returns +null+ for null/~.
+Returns NIL for false."
+  (let* ((acc nil)
+         (ch (peek-chr source)))
     (cond
-      ((string= word "true") t)
-      ((string= word "false") nil)
-      (t (error 'extraction-error
-                :expected "boolean (true or false)" :got word)))))
+      ;; Check for false first
+      ((char= ch #\f)
+       (read-chr source)
+       (loop repeat 4
+             do (push (read-chr source) acc))
+       (let ((word (build-string acc)))
+         (if (string= word "false")
+             nil
+             (error 'extraction-error
+                    :format "Expected null or false, got: ~A"
+                    :args (list word)))))
+      ;; Check for null
+      ((char= ch #\n)
+       (read-chr source)
+       (loop repeat 3
+             do (push (read-chr source) acc))
+       (let ((word (build-string acc)))
+         (if (string= word "null")
+             +null+
+             (error 'extraction-error
+                    :format "Expected null, got: ~A"
+                    :args (list word)))))
+      ;; Check for YAML ~ (null)
+      ((char= ch #\~)
+       (read-chr source)
+       +null+)
+      (t
+       (error 'extraction-error
+              :format "Expected null, false, or ~, got: ~A"
+              :args (list ch))))))
 
-(defun parse-null (strm)
-  (let ((c (peek-chr strm)))
+(defun parse-number (source)
+  "Parse a number from SOURCE.
+Handles integers and floats with optional exponent.
+Returns the parsed number as a numeric type."
+  (let ((acc nil)
+        (ch (peek-chr source)))
+    ;; Handle optional sign
+    (when (or (char= ch #\-) (char= ch #\+))
+      (push ch acc)
+      (read-chr source)
+      (setf ch (peek-chr source)))
+    ;; Parse digits before decimal/exponent
+    (loop while (digit-char-p ch)
+          do (push ch acc)
+             (read-chr source)
+             (setf ch (peek-chr source)))
+    ;; Handle decimal point
+    (when (char= ch #\.)
+      (push ch acc)
+      (read-chr source)
+      (setf ch (peek-chr source))
+      (loop while (digit-char-p ch)
+            do (push ch acc)
+               (read-chr source)
+               (setf ch (peek-chr source))))
+    ;; Handle exponent
+    (when (or (char= ch #\e) (char= ch #\E))
+      (push ch acc)
+      (read-chr source)
+      (setf ch (peek-chr source))
+      (when (or (char= ch #\-) (char= ch #\+))
+        (push ch acc)
+        (read-chr source)
+        (setf ch (peek-chr source)))
+      (loop while (digit-char-p ch)
+            do (push ch acc)
+               (read-chr source)
+               (setf ch (peek-chr source))))
+    (let ((num-str (build-string acc)))
+      (cond
+        ((position #\. num-str) (read-from-string num-str))
+        ((position #\e num-str) (read-from-string num-str))
+        ((position #\E num-str) (read-from-string num-str))
+        (t (let ((int-val (parse-integer num-str)))
+             (if (or (>= int-val 536870912)
+                     (<= int-val -536870913))
+                 (coerce int-val 'double-float)
+                 int-val)))))))
+
+(defun parse-hex-digit (ch)
+  "Parse a single hex digit character.
+Returns the numeric value (0-15) or signals an error."
+  (cond
+    ((char<= #\0 ch #\9) (- (char-code ch) (char-code #\0)))
+    ((char<= #\a ch #\f) (+ 10 (- (char-code ch) (char-code #\a))))
+    ((char<= #\A ch #\F) (+ 10 (- (char-code ch) (char-code #\A))))
+    (t (error 'extraction-error
+              :format "Invalid hex digit: ~A"
+              :args (list ch)))))
+
+(defun parse-unicode-codepoint (source)
+  "Parse a \\uXXXX sequence from SOURCE.
+Returns the Unicode code point as an integer."
+  (let ((ch1 (read-chr source))
+        (ch2 (read-chr source))
+        (ch3 (read-chr source))
+        (ch4 (read-chr source)))
+    (unless (and (characterp ch1) (characterp ch2)
+                 (characterp ch3) (characterp ch4))
+      (error 'extraction-error
+             :format "Incomplete unicode escape sequence"
+             :args nil))
+    (+ (ash (parse-hex-digit ch1) 12)
+       (ash (parse-hex-digit ch2) 8)
+       (ash (parse-hex-digit ch3) 4)
+       (parse-hex-digit ch4))))
+
+(defun parse-string (source)
+  "Parse a double-quoted string from SOURCE.
+Handles JSON escape sequences per RFC 8259 Section 7."
+  (read-chr source) ;; consume opening quote
+  (let ((acc nil)
+        (ch (peek-chr source)))
+    (loop while (and (characterp ch)
+                     (not (char= ch #\")))
+          do (cond
+               ((char= ch #\\)
+                (read-chr source) ;; consume backslash
+                (setf ch (read-chr source))
+                (case ch
+                  (#\" (push #\" acc))
+                  (#\\ (push #\\ acc))
+                  (#\/ (push #\/ acc))
+                  (#\b (push #\Backspace acc))
+                  (#\f (push #\Page acc))
+                  (#\n (push #\Newline acc))
+                  (#\r (push #\Return acc))
+                  (#\t (push #\Tab acc))
+                  (#\u
+                   (let ((codepoint (parse-unicode-codepoint source)))
+                     (cond
+                       ;; High surrogate (D800-DBFF) followed by low surrogate (DC00-DFFF)
+                       ((and (>= codepoint #xD800) (<= codepoint #xDBFF))
+                        (let ((ch2 (read-chr source)))
+                          (unless (char= ch2 #\\)
+                            (error 'extraction-error
+                                   :format "Invalid unicode escape: expected low surrogate"
+                                   :args nil))
+                          (let ((ch3 (read-chr source)))
+                            (unless (char= ch3 #\u)
+                              (error 'extraction-error
+                                     :format "Invalid unicode escape: expected u"
+                                     :args nil)))
+                        (let ((low-surrogate (parse-unicode-codepoint source)))
+                          (unless (and (>= low-surrogate #xDC00)
+                                       (<= low-surrogate #xDFFF))
+                            (error 'extraction-error
+                                   :format "Invalid unicode escape: expected low surrogate"
+                                   :args nil))
+                          (setf codepoint
+                                (+ #x10000
+                                   (ash (- codepoint #xD800) 10)
+                                   (- low-surrogate #xDC00)))))
+                       ;; Unpaired surrogate
+                       ((or (and (>= codepoint #xD800) (<= codepoint #xDFFF))
+                            (> codepoint #x10FFFF))
+                        (error 'extraction-error
+                               :format "Invalid unicode codepoint: ~X"
+                               :args (list codepoint))))
+                     (loop for i from 0 below (ceiling (log (1+ codepoint) 256))
+                           do (push (code-char (mod (ash codepoint (* -8 i)) 256))
+                                    acc))))
+                  (t
+                   (error 'extraction-error
+                          :format "Invalid escape sequence: \\~A"
+                          :args (list ch)))))
+               (t
+                (push ch acc)
+                (read-chr source)))
+          (setf ch (peek-chr source)))
+    (read-chr source) ;; consume closing quote
+    (build-string acc)))
+
+(defun parse-scalar (source)
+  "Parse a scalar value from SOURCE.
+Detects and delegates to specific parsers."
+  (skip-whitespace-and-comments source)
+  (let ((ch (peek-chr source)))
     (cond
-      ((char= c #\~) (read-chr strm) +null+)
-      (t (let ((word (extract-word strm)))
-           (if (string= word "null") +null+
-               (error 'extraction-error
-                       :expected "null (null or ~)" :got word)))))))
+      ((eq ch +eof+) +eof+)
+      ((or (char= ch #\")
+           (char= ch #\'))
+       (parse-string source))
+      ((digit-char-p ch)
+       (parse-number source))
+      ((or (char= ch #\-)
+           (char= ch #\+))
+       (parse-number source))
+      ((char= ch #\t)
+       (parse-boolean source))
+      ((or (char= ch #\f)
+           (char= ch #\n)
+           (char= ch #\~))
+       (parse-null source))
+      (t
+       (error 'extraction-error
+              :format "Unexpected character: ~A"
+              :args (list ch))))))
 
-(defun parse-number (strm)
-  (let ((chars nil) (c (peek-chr strm)))
-    ;; Optional sign
-    (when (and (characterp c) (or (char= c #\+) (char= c #\-)))
-      (push (read-chr strm) chars)
-      (setf c (peek-chr strm)))
-    ;; Check for special YAML floats: .inf, .nan
-    (when (and (characterp c) (char= c #\.))
-      (let ((next (peek-chr strm)))
-        (when (member next '(#\i #\I #\n #\N) :test #'char=)
-          (read-chr strm)
-          (let ((word (extract-word strm)))
-            (cond
-              ((member word '("inf" "Inf" "INF") :test #'string=)
-               (return-from parse-number
-                 (if (and chars (char= (car chars) #\-)) ':-inf ':+inf)))
-              ((member word '("nan" "NaN" "NAN") :test #'string=)
-               (return-from parse-number 'nan))
-              (t (error 'extraction-error
-                        :expected "valid special float (.inf, .nan)"
-                        :got (concatenate 'string "." word))))))))
-    ;; Parse regular integer part
-    (loop while (and (characterp c) (digit-char-p c))
-          do (push (read-chr strm) chars)
-             (setf c (peek-chr strm)))
-    (when (null chars)
-      (error 'extraction-error :expected "digit" :got c))
-    ;; Check for decimal point
-    (when (and (characterp c) (char= c #\.))
-      (push (read-chr strm) chars)
-      (setf c (peek-chr strm))
-      (unless (and (characterp c) (digit-char-p c))
-        (error 'extraction-error
-                :expected "digit after decimal point"
-                :got c))
-      (loop while (and (characterp c) (digit-char-p c))
-            do (push (read-chr strm) chars)
-               (setf c (peek-chr strm))))
-    ;; Check for exponent
-    (when (and (characterp c) (or (char= c #\e) (char= c #\E)))
-      (push (read-chr strm) chars)
-      (setf c (peek-chr strm))
-      (when (and (characterp c) (or (char= c #\+) (char= c #\-)))
-        (push (read-chr strm) chars)
-        (setf c (peek-chr strm)))
-      (loop while (and (characterp c) (digit-char-p c))
-            do (push (read-chr strm) chars)
-               (setf c (peek-chr strm))))
-    (let ((str (build-string (nreverse chars))))
-      (if (or (position #\. str) (position #\e str) (position #\E str))
-          (read-from-string str) (parse-integer str)))))
+;;; API - Stream-based
 
-(defun parse-string (strm)
-  (read-chr strm)
-  (loop with chars = nil
-        for c = (peek-chr strm)
-        until (or (eq c +eof+) (char= c #\"))
-        do (cond
-             ((char= c #\\)
-              (read-chr strm)
-              (let ((e (read-chr strm)))
-                (push (cond
-                        ((char= e #\") #\")
-                        ((char= e #\\) #\\)
-                        ((char= e #\/) #\/)
-                        ((char= e #\b) (code-char 8))
-                        ((char= e #\f) (code-char 12))
-                        ((char= e #\n) #\Newline)
-                        ((char= e #\r) #\Return)
-                        ((char= e #\t) #\Tab)
-                        ((char= e #\u)
-                         (let* ((d1 (read-chr strm))
-                                (d2 (read-chr strm))
-                                (d3 (read-chr strm))
-                                (d4 (read-chr strm))
-                                (hex (coerce (list d1 d2 d3 d4) 'string)))
-                           (code-char (parse-integer hex :radix 16))))
-                        (t (error 'extraction-error
-                                   :expected "valid escape" :got e)))
-                      chars)))
-             (t (push (read-chr strm) chars)))
-        finally (when (eq c +eof+)
-                  (error 'extraction-error
-                          :expected "closing quote" :got +eof+))
-                (read-chr strm)
-                (return (build-string (nreverse chars)))))
+(defun parse-from (source)
+  "Parse a YAML scalar value from SOURCE.
+SOURCE must be a stream.
+Returns the parsed value or +eof+ at end of input.
+Handles comments, whitespace, booleans, null, numbers, and strings."
+  (let ((ch (peek-chr source)))
+    (if (eq ch +eof+)
+        +eof+
+        (parse-scalar source))))
 
-(defun parse-scalar (strm)
-  (let ((c (skip-whitespace-and-comments strm)))
-    (when (eq c +eof+) (return-from parse-scalar nil))
-    (cond
-      ((char= c #\t) (parse-boolean strm))
-      ((char= c #\f) (parse-boolean strm))
-      ((char= c #\n) (parse-null strm))
-      ((char= c #\~) (read-chr strm) +null+)
-      ((or (char= c #\+) (char= c #\-) (digit-char-p c))
-       (parse-number strm))
-      ((char= c #\") (parse-string strm))
-      (t (error 'extraction-error
-                :expected "scalar value" :got c)))))
+(defun parse-from-string (string)
+  "Parse a YAML scalar value from STRING.
+Convenience wrapper around parse-from."
+  (with-input-from-string (stream string)
+    (parse-from stream)))
 
-(defun parse-from (strm)
-  (declare (type stream strm))
-  (let ((c (skip-whitespace-and-comments strm)))
-    (when (eq c +eof+) (return-from parse-from nil))
-    (parse-scalar strm)))
+;;; Generation
 
-(defun parse-from-string (str)
-  (declare (type string str))
-  (with-input-from-string (strm str) (parse-from strm)))
+(defun escape-character (ch)
+  "Get the escape sequence for a character.
+Returns (cons escaped-char . rest) or NIL if no escape needed."
+  (case ch
+    (#\" '("\\" . "\""))
+    (#\\ '("\\" . "\\"))
+    (#\Backspace '("\\" . "b"))
+    (#\Page '("\\" . "f"))
+    (#\Newline '("\\" . "n"))
+    (#\Return '("\\" . "r"))
+    (#\Tab '("\\" . "t"))
+    (t nil)))
 
-(defun generate-to (strm val &key (pretty-indent 0) json-mode)
-  (declare (type stream strm)
-           (type (or null (integer 0 64)) pretty-indent)
-           (type boolean json-mode))
-  (typecase val
-    ((eql nil) (write-string "false" strm))
-    ((eql +null+) (write-string "null" strm))
-    ((eql t) (write-string "true" strm))
-    (number (prin1 val strm))
-    (string (progn (write-char #\" strm)
-                   (write-string val strm)
-                   (write-char #\" strm)))
-    (t (error 'generation-error
-              :expected "YAML serializable value" :got val)))
-  val)
+(defun escape-string (str)
+  "Escape a string for JSON output.
+Handles all characters that need escaping per RFC 8259."
+  (let ((result nil))
+    (loop for ch across str
+          do (let ((escape (escape-character ch)))
+               (if escape
+                   (progn
+                     (push (car escape) result)
+                     (push (cdr escape) result))
+                   (progn
+                     (push (string ch) result)))))
+    (apply #'concatenate 'string (reverse result))))
 
-(defun generate-to-string (val &key (pretty-indent 0) json-mode)
-  (declare (type (or null (integer 0 64)) pretty-indent)
-           (type boolean json-mode))
-  (with-output-to-string (strm)
-    (generate-to strm val
-                 :pretty-indent pretty-indent
-                 :json-mode json-mode)))
+(defun generate-scalar (stream value)
+  "Generate a scalar VALUE to STREAM.
+Handles booleans, null, numbers, strings, and lists."
+  (typecase value
+    (null (format stream "false"))
+    ((eql cl:null) (format stream "null"))
+    (boolean (format stream "~:[false~;true~]" value))
+    (number (format stream "~G" value))
+    (string
+     (write-char #\" stream)
+     (write-string (escape-string value) stream)
+     (write-char #\" stream))
+    (list
+     (write-char #\[ stream)
+     (loop for (item . rest) on value
+           do (generate-scalar stream item)
+              (when rest (write-char #\, stream)))
+     (write-char #\] stream))
+    (t
+     (write-char #\" stream)
+     (write-string (escape-string (format nil "~A" value)) stream)
+     (write-char #\" stream))))
+
+(defun generate-to (sink value)
+  "Generate YAML representation of VALUE to SINK (a stream).
+Handles booleans, null, numbers, strings, and lists."
+  (generate-scalar sink value))
+
+(defun generate-to-string (value)
+  "Generate YAML representation of VALUE to a string.
+Convenience wrapper around generate-to."
+  (with-output-to-string (stream)
+    (generate-to stream value)))

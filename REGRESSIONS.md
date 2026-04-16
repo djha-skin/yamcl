@@ -1,127 +1,83 @@
 # REGRESSIONS.md
 
-This document tracks known issues and planned fixes for yamcl.
+This file tracks issues with the current implementation that need to be fixed.
 
----
+## REGR-001: API - Streams Only (No String Arguments)
 
-## REGR-001: API - Streams Only
+**Status**: TODO
 
-**Status**: Pending
+`parse-from` and `generate-to` currently take strings as arguments. They should
+take streams instead. Users can wrap with `with-input-from-string` /
+`with-output-to-string` for convenience.
 
-**Description**: `parse-from` and `generate-to` currently take string arguments.
-They should take streams only, with helper functions `parse-from-string`
-and `generate-to-string` wrapping them with `with-input-from-string` /
-`with-output-to-string`.
+**Reference**: NRDL `../nrdl/cl/main.lisp` uses this pattern.
 
-**Reference**: NRDL `../nrdl/cl/main.lisp` - NRDL uses streams-only API.
-
-**Tasks**:
-- [ ] Change `parse-from` to accept a stream (not string)
-- [ ] Change `generate-to` to accept a stream (not string)
-- [ ] Create `parse-from-string` wrapper
-- [ ] Create `generate-to-string` wrapper
-- [ ] Update tests to use string wrappers
+**Changes Required**:
+1. Change `parse-from` to take a stream
+2. Change `generate-to` to take a stream
+3. Add `parse-from-string` wrapper using `with-input-from-string`
+4. Add `generate-to-string` wrapper using `with-output-to-string`
 
 ---
 
 ## REGR-002: null vs false Distinction
 
-**Status**: Pending
+**Status**: TODO
 
-**Description**: `parse-from` currently parses both YAML `false` and `null`
-into CL's `nil`. They should be distinguishable.
+Currently `parse-from` parses both `false` and `null` into CL's `nil`, making
+them indistinguishable. We want jzon-like behavior:
 
-**Behavior**:
-- `null` (YAML) → `cl:null` (out-of-band symbol)
-- `false` (YAML) → `nil` (CL's nil)
+- `false` → CL's `nil`
+- `null` → `cl:null` (out-of-band symbol)
+- `~` → `cl:null` (YAML null shorthand)
 
-**Reference**: NRDL `convert-to-symbol` function.
+**Reference**: NRDL uses `convert-to-symbol` pattern.
 
-**Tasks**:
-- [ ] Update `parse-boolean` to return `cl:null` for null
-- [ ] Update `parse-null` to return `cl:null`
-- [ ] Update tests to verify distinction
-- [ ] Document this in code
+**Changes Required**:
+1. Modify `parse-boolean` to return `nil` for `false`
+2. Modify `parse-null` to return `cl:null`
+3. Update tests to verify distinction
 
 ---
 
 ## REGR-003: Escape Sequences in Parsing
 
-**Status**: Pending
+**Status**: TODO
 
-**Description**: String parsing does not handle backslash escape sequences.
+String parsing doesn't handle JSON escape sequences per RFC 8259 Section 7.
 
-**Required escapes** (per RFC 8259 Section 7):
+**Required escapes**:
 - `\\` → `\`
 - `\"` → `"`
 - `\/` → `/`
-- `\b` → Backspace (character 8)
-- `\f` → Form feed (character 12)
+- `\b` → Backspace
+- `\f` → Form Feed
 - `\n` → Newline
-- `\r` → Carriage return
+- `\r` → Carriage Return
 - `\t` → Tab
-- `\uXXXX` → Unicode character
+- `\uXXXX` → Unicode character (4 hex digits)
 
-**Reference**: NRDL `extract-quoted` function.
+**Reference**: NRDL `extract-quoted` handles this.
 
-**Tasks**:
-- [ ] Implement escape sequence handling in string parsing
-- [ ] Handle `\uXXXX` 4-digit hex escapes
-- [ ] Handle `\uXXXX\uYYYY` surrogate pairs if needed
-- [ ] Add tests for all escape sequences
+**Changes Required**:
+1. Modify `parse-string` to handle escape sequences
+2. Add tests for escaped strings
 
 ---
 
 ## REGR-004: Escape Sequences in Generation
 
-**Status**: Pending
+**Status**: TODO
 
-**Description**: `generate-to` does not escape strings in output.
+String generation doesn't escape special characters per JSON rules.
 
-**Required escapes**:
-- `\` → `\\`
+**Characters to escape**:
 - `"` → `\"`
-- Newline → `\n`
-- Tab → `\t`
-- Carriage return → `\r`
-- Form feed → `\f`
-- Backspace → `\b`
-- Unprintable chars → `\uXXXX`
+- `\` → `\\`
+- Control characters (0x00-0x1F) → `\uXXXX`
 
-**Reference**: NRDL `inject-quoted` function.
+**Reference**: NRDL `inject-quoted` handles this.
 
-**Tasks**:
-- [ ] Implement escape sequence handling in generation
-- [ ] Handle unprintable characters with `\uXXXX`
-- [ ] Add tests for round-trip escaping
-
----
-
-## Implementation Notes
-
-### cl:null vs nil
-
-- `cl:null` is an out-of-band symbol with no special meaning in Common
-  Lisp. It exists solely to distinguish YAML null from YAML false.
-- CL's `nil` represents both CL's false and CL's null (absence of value).
-  In our YAML parsing, `nil` represents YAML's `false` boolean.
-- This is consistent with NRDL's approach.
-
-### Stream-based API
-
-The YAML library takes a stream-based approach for consistency and
-flexibility. Users can wrap with:
-
-```lisp
-;; Parsing
-(parse-from-string "hello: world")
-;; Equivalent to:
-(let ((stream (make-string-input-stream "hello: world")))
-  (parse-from stream))
-
-;; Generation
-(generate-to-string '("hello" . "world"))
-;; Equivalent to:
-(with-output-to-string (stream)
-  (generate-to stream '("hello" . "world")))
-```
+**Changes Required**:
+1. Modify `generate-scalar` to escape strings
+2. Add tests for escaped string generation

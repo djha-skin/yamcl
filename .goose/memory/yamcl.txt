@@ -1,0 +1,27 @@
+# # yamcl parsing jzon scalarsyamcl ocicl quicklisp lisp project
+
+jzon-like parsing: true→t, false→nil, null→cl:null (a symbol named NULL, distinct from CL's nil)yamcl project uses OCICL, NOT Quicklisp. ~/.roswell/init.lisp manages the OCICL/Quicklisp toggle.
+
+
+
+# # # ocicl quicklisp project-config# reference nrdl patternsapi streams nrdl-reference# 
+escapes strings rfc8259
+
+scalars booleans null jzonyamcl uses OCICL, not Quicklisp. The ~/.roswell/init.lisp manages this toggle. Do NOT use quicklisp.
+Reference NRDL implementation at ../nrdl/cl/main.lisp - has all patterns for: escape handling, null vs false, stream-based API, serializationNRDL API: parse-from and generate-to take STREAM arguments. Wrapper functions parse-from-string and generate-to-string wrap these with with-input-from-string and with-output-to-string respectively.
+
+
+NRDL escape handling: \n -> Newline, \r -> Return, \t -> Tab, \b -> Backspace, \f -> Page, \" -> quote, \\ -> backslash, \/ -> slash, \uXXXX -> Unicode code point
+
+
+
+NRDL JSON boolean/null handling: false -> CL's nil, null -> CL:NULL symbol. This is jzon-like behavior. Use 'cl:null symbol for YAML null, and CL's nil for false.
+
+
+
+# yamcl ocicl quicklisp roswell
+yamcl project uses OCICL, NOT Quicklisp. The ~/.roswell/init.lisp file manages this. The one-shot-lisp.ros script was incorrectly using quicklisp - this was fixed.
+
+# yaml ocicl lisp yamcl nrdl
+yamlcl uses OCICL, NOT Quicklisp. The tooling in ~/.roswell/init.lisp manages this. For jzon-like behavior: parse null → cl:null (out-of-band symbol), parse false → nil (CL's nil). Reference: NRDL ../nrdl/cl/main.lisp shows convert-to-symbol, extract-quoted, inject-quoted for proper escaping.
+

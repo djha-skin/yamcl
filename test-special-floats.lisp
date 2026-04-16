@@ -1,0 +1,7 @@
+(asdf:load-system "com.djhaskin.yamcl")
+(format t "+.inf: ~S~%" (com.djhaskin.yamcl:parse-from-string "+.inf"))
+(format t "+.nan: ~S~%" (com.djhaskin.yamcl:parse-from-string "+.nan"))
+(format t "-.inf: ~S~%" (com.djhaskin.yamcl:parse-from-string "-.inf"))
+(format t "-.nan: ~S~%" (com.djhaskin.yamcl:parse-from-string "-.nan"))
+(format t ".inf: ~S~%" (com.djhaskin.yamcl:parse-from-string ".inf"))
+(format t ".nan: ~S~%" (com.djhaskin.yamcl:parse-from-string ".nan"))
