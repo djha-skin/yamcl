@@ -1,35 +1,234 @@
 ;;;; src/scalars.lisp
 ;;;; yamcl - YAML scalar parsing
 
-(cl:defpackage :com.djhaskin.yamcl/scalars
-  (:use :cl)
-  (:import-from :com.djhaskin.yamcl
-                :+eof+
-                :+null+
-                :extraction-error
-                :extraction-error-format
-                :extraction-error-args)
+(defpackage #:com.djhaskin.yamcl/scalars
+  (:use #:cl
+        #:com.djhaskin.yamcl/utils)
   (:export
-   ;; Scalar parsing
-   :parse-scalar
-   :parse-scalar-from-string
-   :parse-from
-   :parse-from-string
-   ;; Boolean, null, number, string parsing
-   :parse-boolean
-   :parse-null
-   :parse-number
-   :parse-string
-   ;; Character handling
-   :peek-chr
-   :read-chr
-   :skip-whitespace-and-comments
-   ;; Utility
-   :blankspace-p
-   :whitespace-p
-   :build-string))
+   #:parse-scalar
+   #:parse-scalar-from-string
+   #:parse-boolean
+   #:parse-null
+   #:parse-number
+   #:parse-string
+   #:peek-chr
+   #:read-chr
+   #:skip-whitespace-and-comments
+   #:blankspace-p
+   #:whitespace-p
+   #:build-string))
 
-(cl:in-package :com.djhaskin.yamcl/scalars)
+(in-package #:com.djhaskin.yamcl/scalars)
+
+(defun extract-number (strm chr)
+  (declare (type streamable strm)
+           (type streamed chr))
+  (let ((building nil)
+        (last-read chr))
+    (loop while (and
+                  (not (eq last-read +eof+))
+                  (number-char-p last-read))
+          do
+          (push last-read building)
+          (read-chr strm)
+          (setf last-read (peek-chr strm)))
+    (let ((num-str (build-string building)))
+      (cond ((or (equals num-str "+.inf")
+                 (equals num-str ".inf"))
+             :positive-infinity)
+            ((equals num-str "-.inf")
+             :negative-infinity)
+            ((or (equals num-str ".nan")
+                 (equals num-str "+.nan")
+                 (equals num-str "-.nan"))
+                :not-a-number)
+            (t
+             (read-from-string num-str nil nil))))))
+
+(defun extract-double-quoted
+  (strm chr quote-char)
+  (declare (type streamable strm)
+           (type streamed chr)
+           (type character quote-char))
+  (declare (ignore chr))
+  (must-read-chr strm)
+  (let ((last-read (must-read-chr strm))
+        (building nil))
+    (loop while (and (not (eq last-read +eof+))
+                     (char/= last-read quote-char))
+          do
+          (if (char= last-read #\\)
+            (progn
+              (setf last-read (must-read-chr strm))
+              (cond (
+                     ((char= last-read #\0)
+                      (push (code-char 0) building))
+                     ((char= last-read #\a)
+                      (push (code-char 7) lbuilding))
+                     ((char= last-read #\b)
+                      (push #\Backspace building))
+                     ((char= last-read #\v)
+                      (push (code-char 11) building))
+                     ((char= last-read #\f)
+                      (push #\Page building))
+                     ((char= last-read #\r)
+                      (push #\Return building))
+                     ((char= last-read #\e)
+                      (push (code-char 27) building))
+                     ((char= last-read #\Space)
+                      (push #\Space building))
+                     ((char= last-read #\
+
+                     ((char= last-read #\\)
+                      (push #\\ building))
+                     ((char= last-read #\N)
+                      (push (code-char #x85) building))
+                     ((char= last-read #\L)
+                      (push (code-char #x2028) building))
+                     ((char= last-read #\P)
+                      (push (code-char #x2029) building))
+                     ((char= last-read #\_)
+                      (push (code-char #x00A0) building))
+                     ((char= last-read #\/)
+                      (push last-read building))
+((char= last-read quote-char)
+                     (push quote-char building))
+                     ((char= last-read #\n)
+                      (push #\Newline building))
+                     ((char= last-read #\t)
+                      (push #\Tab building))
+                     ((char= last-read #\x)
+                        (push
+                            (code-char
+                            (let ((build-ordinal (make-string 2)))
+                                (setf (elt build-ordinal 0) (must-read-chr strm))
+                                (setf (elt build-ordinal 1) (must-read-chr strm))
+                                (read-from-string build-ordinal nil nil)))
+                            building))
+                     ((char= last-read #\U)
+                      (push
+                        (code-char
+                          (let ((build-ordinal (make-string 8)))
+                            (setf (elt build-ordinal 0) #\#)
+                            (setf (elt build-ordinal 1) #\X)
+                            (setf (elt build-ordinal 2) (must-read-chr strm))
+                            (setf (elt build-ordinal 3) (must-read-chr strm))
+                            (setf (elt build-ordinal 4) (must-read-chr strm))
+                            (setf (elt build-ordinal 5) (must-read-chr strm))
+                            (setf (elt build-ordinal 6) (must-read-chr strm))
+                            (setf (elt build-ordinal 7) (must-read-chr strm))
+                            (read-from-string build-ordinal nil nil)))
+                        building))
+                     ((char= last-read #\u)
+                      (push
+                        (code-char
+                          (let ((build-ordinal (make-string 6)))
+                            (setf (elt build-ordinal 0) #\#)
+                            (setf (elt build-ordinal 1) #\X)
+                            (setf (elt build-ordinal 2) (must-read-chr strm))
+                            (setf (elt build-ordinal 3) (must-read-chr strm))
+                            (setf (elt build-ordinal 4) (must-read-chr strm))
+                            (setf (elt build-ordinal 5) (must-read-chr strm))
+                            (read-from-string build-ordinal nil nil)))
+                        building))
+                     (t (error
+                          'extraction-error
+                          :expected
+                          '(#\"
+                            #\\
+                            #\/
+                            #\b
+                            #\f
+                            #\n
+                            #\r
+                            #\t
+                            #\x
+                            #\u
+                            #\U)
+                          :got
+                               last-read))))
+            (push last-read building))
+          (setf last-read (must-read-chr strm)))
+    (build-string building)))
+
+(defconstant +start-verbatim+ #\|)
+(defconstant +start-prose+ #\>)
+(defconstant +start-comment+ #\#)
+
+(defun blankspace-p (chr)
+  (declare (type character chr))
+  (or
+    (char= chr #\Tab)
+    (char= chr #\Space)
+    ))
+
+(defun whitespace-p (chr)
+  (declare (type character chr))
+    (or
+      (char= chr #\Newline)
+      (char= chr #\Return)
+      (char= chr #\Page)
+      (blankspace-p chr)))
+
+(defun sepchar-p (chr)
+  (declare (type character chr))
+  (or (whitespace-p chr)
+      (char= chr #\,)
+      (char= chr #\:)))
+
+(defun guarded-sepchar-p (chr)
+  (declare (type (or null character) chr))
+    (unless (null chr)
+      (sepchar-p chr)))
+
+(defun guarded-blankspace-p (chr)
+  (declare (type (or null character) chr))
+    (unless (null chr)
+      (blankspace-p chr)))
+
+(defun extract-comment (strm)
+  (declare (type streamable strm))
+  (loop with last-read = (read-chr strm)
+        while (and
+                (not (eq last-read +eof+))
+                (not (char= last-read #\Newline)))
+        do
+        (setf last-read (read-chr strm))
+        finally
+        (return last-read)))
+
+(defun extract-sep (strm chr pred)
+  (declare (type streamable strm)
+           (type streamed chr)
+           (type function pred))
+  (loop with just-read = nil
+        with next = chr
+    do
+    (cond
+      ((eq next +eof+)
+       (return just-read))
+      ((eql next +start-comment+)
+       (setf just-read (extract-comment strm)))
+      ((funcall pred next)
+       (setf just-read (must-read-chr strm)))
+      (t
+        (return just-read)))
+    (setf next (peek-chr strm))))
+
+(defun extract-list-sep (strm chr)
+  (declare (type streamable strm)
+           (type streamed chr))
+  (extract-sep strm chr #'guarded-sepchar-p))
+
+(defun extract-blob-sep (strm chr)
+  (declare (type streamable strm)
+           (type streamed chr))
+  (extract-sep strm chr #'guarded-blankspace-p))
+#|
+
+
+
+
 
 ;;; Character Queue (implement inline to avoid circular dependency)
 (deftype char-queue () 'com.djhaskin.yamcl:char-queue)

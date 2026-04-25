@@ -78,7 +78,6 @@
   (is eql (scalars:parse-scalar-from-string "-.inf") :negative-infinity)
   (is eql (scalars:parse-scalar-from-string ".nan") :not-a-number))
 
-
 (define-test example-2.2-scalars-mapping-of-scalars
   :parent scalars-suite
   (is string= (scalars:parse-scalar-from-string "hr") "hr")
