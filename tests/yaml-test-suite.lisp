@@ -48,7 +48,9 @@
     (uiop:collect-sub*directories
       *test-suite-root*
       (constantly t)  ; always descend
-      #'test-directory-p
+      (lambda (dir)
+        (and (uiop:directory-exists-p dir)
+             (uiop:file-exists-p (merge-pathnames "in.yaml" dir))))
       (lambda (dir) (push dir paths)))
     (nreverse paths)))
 
