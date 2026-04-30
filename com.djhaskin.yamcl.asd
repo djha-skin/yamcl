@@ -7,9 +7,11 @@
                )
   :components ((:module "src"
                 :components
-                ((:file "main")
+                ((:file "utils")
+                 (:file "main"
+                  :depends-on ("utils"))
                  (:file "scalars"
-                  :depends-on ("main")))))
+                  :depends-on ("main" "utils")))))
   :description
   "YAML Ain't Markup Language -- Common Lisp. A pure Common Lisp
 library for parsing and rendering YAML."
@@ -27,7 +29,8 @@ library for parsing and rendering YAML."
   :components ((:module "tests"
                 :components
                 ((:file "main")
-                 (:file "scalars"))))
+                 (:file "scalars")
+                 (:file "yaml-test-suite"))))
   :description "Test system for yamcl"
   :perform (asdf:test-op (op c)
                     (uiop:symbol-call

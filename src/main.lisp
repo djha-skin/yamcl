@@ -72,14 +72,12 @@
 SOURCE must be a stream.
 Returns the parsed value or +eof+ at end of input.
 Handles comments, whitespace, booleans, null, numbers, and strings."
-  (funcall (find-symbol "PARSE-FROM" :com.djhaskin.yamcl/scalars) source))
+  (uiop:symbol-call :com.djhaskin.yamcl/scalars :parse-from source))
 
 (defun parse-from-string (string)
   "Parse a YAML scalar value from STRING.
 Convenience wrapper around parse-from."
-  (funcall (find-symbol "PARSE-FROM-STRING" :com.djhaskin.yamcl/scalars) string))
-
-
+  (uiop:symbol-call :com.djhaskin.yamcl/scalars :parse-from-string string))
 
 ;;; Generation
 

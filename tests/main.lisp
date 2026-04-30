@@ -11,6 +11,7 @@
                 :is
                 :isnt
                 :of-type
-                :finish))
+                :finish
+                :skip))
 
 (cl:in-package :com.djhaskin.yamcl/tests)

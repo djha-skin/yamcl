@@ -6,12 +6,6 @@
 
 (defpackage #:com.djhaskin.yamcl/utils
   (:use :cl)
-  (:import-from #:com.djhaskin.yamcl
-                #:+eof+
-                #:+null+
-                #:extraction-error
-                #:extraction-error-format
-                #:extraction-error-args)
   (:export
     #:+eof+
     #:+null+
@@ -24,9 +18,10 @@
     #:peek-chr
     #:read-chr
     #:number-start-p
-    #:number-char-p))
+    #:number-char-p
+    #:list-string))
 
-(in-package #:com.djhaskin.yamcl/scalars)
+(in-package #:com.djhaskin.yamcl/utils)
 
 (defconstant +eof+ :eof)
 (defconstant +null+ :null)
