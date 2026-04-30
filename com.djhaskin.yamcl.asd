@@ -26,7 +26,8 @@ library for parsing and rendering YAML."
                )
   :components ((:module "tests"
                 :components
-                ((:file "main"))))
+                ((:file "main")
+                 (:file "scalars"))))
   :description "Test system for yamcl"
   :perform (asdf:test-op (op c)
                     (uiop:symbol-call
