@@ -143,12 +143,18 @@ Handles integers and floats with optional exponent."
                          (char= ch #\-)
                          (char= ch #\+)
                          (char= ch #\e)
-                         (char= ch #\E)))
+                         (char= ch #\E)
+                         (char= ch #\_)
+                         (char= ch #\o)
+                         (char= ch #\x)
+                         (char= ch #\b)))
           do (write-char (read-chr source) buffer))
     (let ((str (get-output-stream-string buffer)))
       (if (string= str "")
           (error 'extraction-error :expected "number" :got (peek-chr source))
-          (read-from-string str)))))
+          ;; Convert YAML number syntax to Common Lisp syntax
+          (let ((converted (yaml-number-to-cl str)))
+            (read-from-string converted))))))
 
 (defun parse-string (source)
   "Parse a double-quoted string from SOURCE."
@@ -182,10 +188,56 @@ Detects and delegates to specific parsers."
   "Parse a YAML scalar value from SOURCE.
 SOURCE must be a stream.
 Returns the parsed value or +eof+ at end of input."
+  (skip-whitespace-and-comments source)
   (let ((ch (peek-chr source)))
-    (if (eq ch +eof+)
-        +eof+
-        (parse-scalar source))))
+    (cond
+      ((eq ch +eof+)
+       +eof+)
+      ;; Check for document start marker: ---
+      ((and (characterp ch) (char= ch #\-))
+       (let ((next1 (progn (read-chr source) (peek-chr source))))
+         (cond
+           ((and (characterp next1) (char= next1 #\-))
+            (let ((next2 (progn (read-chr source) (peek-chr source))))
+              (cond
+                ((and (characterp next2) (char= next2 #\-))
+                 ;; Document start marker found
+                 (read-chr source) ; consume third -
+                 ;; Skip whitespace/comments after marker
+                 (skip-whitespace-and-comments source)
+                 ;; Parse content after marker
+                 (parse-from source))
+                (t
+                 ;; Not a document marker, treat as -- (which is not a valid number)
+                 (error 'extraction-error
+                        :expected '("number" "document marker")
+                        :got (format nil "--~A" next2))))))
+           (t
+            ;; Single dash - treat as negative number
+            (unread-char #\- source)
+            (parse-scalar source)))))
+      ;; Check for document end marker: ...
+      ((and (characterp ch) (char= ch #\.))
+       (let ((next1 (progn (read-chr source) (peek-chr source))))
+         (cond
+           ((and (characterp next1) (char= next1 #\.))
+            (let ((next2 (progn (read-chr source) (peek-chr source))))
+              (cond
+                ((and (characterp next2) (char= next2 #\.))
+                 ;; Document end marker found
+                 (read-chr source) ; consume third .
+                 +eof+) ; document end marker returns EOF
+                (t
+                 ;; Not a document marker, treat as .. (which is not valid)
+                 (error 'extraction-error
+                        :expected '("document end marker")
+                        :got (format nil "..~A" next2))))))
+           (t
+            ;; Single dot - could be start of float like .5
+            (unread-char #\. source)
+            (parse-scalar source)))))
+      (t
+       (parse-scalar source)))))
 
 (defun parse-from-string (string)
   "Parse a YAML scalar value from STRING.

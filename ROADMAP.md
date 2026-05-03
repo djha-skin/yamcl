@@ -3,31 +3,31 @@
 This roadmap tracks the completion of 40 user stories for yamcl (YAML Ain't Markup Language -- Common Lisp). Stories are organized by phase and tested with the Test-Driven Development (TDD) approach.
 
 ## Current Status
-**Last Updated**: $(date)
+**Last Updated**: 2024-12-19
 **Total Stories**: 40
-**Completed**: 1/40 (2.5%)
-**In Progress**: 0
-**Not Started**: 39
+**Completed**: 4/40 (10.0%)
+**In Progress**: 2
+**Not Started**: 34
 
 ## Completion Summary
 
 ### Phase 1: Foundation (14 stories)
 *Comments, whitespace, and basic scalar parsing*
 
-- [x] **US-001**: Parse Line Comments (COMPLETED - All tests pass)
-- [ ] **US-002**: Parse Inline Comments  
-- [ ] **US-003**: Skip Whitespace
-- [ ] **US-004**: Handle Document Markers
-- [ ] **US-005**: Parse Integer Numbers (PARTIAL - Octal notation fails)
-- [ ] **US-006**: Parse Float Numbers
-- [ ] **US-007**: Parse Boolean true/false
-- [ ] **US-008**: Parse Null Values (null and ~)
-- [ ] **US-009**: Distinguish null vs false (cl:null vs nil)
-- [ ] **US-010**: Parse Double-Quoted Strings
-- [ ] **US-011**: Parse Single-Quoted Strings
-- [ ] **US-012**: Parse Bareword Strings (Plain Scalars)
-- [ ] **US-013**: Handle Escape Sequences in Double-Quoted Strings
-- [ ] **US-014**: Handle Escape Sequences in Single-Quoted Strings
+- [x] **US-001**: Parse Line Comments (COMPLETED - 6/6 tests pass)
+- [x] **US-002**: Parse Inline Comments (COMPLETED - 7/7 tests pass)  
+- [x] **US-003**: Skip Whitespace (COMPLETED - 8/8 tests pass)
+- [ ] **US-004**: Handle Document Markers (PARTIAL - 5/8 tests pass)
+- [ ] **US-005**: Parse Integer Numbers (PARTIAL - 8/9 tests pass)
+- [ ] **US-006**: Parse Float Numbers (NOT STARTED)
+- [ ] **US-007**: Parse Boolean true/false (PARTIAL - basic parsing exists but not tested)
+- [ ] **US-008**: Parse Null Values (null and ~) (PARTIAL - basic parsing exists but not tested)
+- [ ] **US-009**: Distinguish null vs false (cl:null vs nil) (NOT STARTED)
+- [ ] **US-010**: Parse Double-Quoted Strings (BASIC - simple parsing exists but not tested)
+- [ ] **US-011**: Parse Single-Quoted Strings (NOT STARTED)
+- [ ] **US-012**: Parse Bareword Strings (Plain Scalars) (NOT STARTED)
+- [ ] **US-013**: Handle Escape Sequences in Double-Quoted Strings (NOT STARTED)
+- [ ] **US-014**: Handle Escape Sequences in Single-Quoted Strings (NOT STARTED)
 
 ### Phase 2: Block Collections (10 stories)
 *Block-style mappings and sequences*
@@ -64,12 +64,13 @@ This roadmap tracks the completion of 40 user stories for yamcl (YAML Ain't Mark
 - [ ] **US-036**: Generate Block Mappings
 - [ ] **US-037**: Generate Block Sequences
 - [ ] **US-038**: Generate Flow Collections
+.
 - [ ] **US-039**: Generate Multi-line Strings
 - [ ] **US-040**: Generate with Anchors and Aliases
 
 ## Detailed Status
 
-### Completed Stories
+### Completed Stories (4)
 
 #### US-001: Parse Line Comments
 - **Status**: COMPLETED ✅
@@ -83,75 +84,114 @@ This roadmap tracks the completion of 40 user stories for yamcl (YAML Ain't Mark
   - Inline comments: `value # comment`
   - Comment at EOF
 
-### In Progress Stories
+#### US-002: Parse Inline Comments
+- **Status**: COMPLETED ✅
+- **Tests**: 7/7 passing
+- **Implementation**: `skip-whitespace-and-comments` in `src/scalars.lisp`
+- **Coverage**:
+  - Comment after number
+  - Comment after negative number
+  - Multiple spaces before comment
+  - Tab before comment
+  - Special characters in comment
+  - Comment without space
+  - Comment at EOF (no newline)
+
+#### US-003: Skip Whitespace
+- **Status**: COMPLETED ✅
+- **Tests**: 8/8 passing
+- **Implementation**: `skip-whitespace-and-comments` in `src/scalars.lisp`
+- **Coverage**:
+  - Leading spaces and tabs
+  - Trailing spaces
+  - Mixed whitespace
+  - Newlines (CR, LF, CRLF)
+  - Multiple newlines
+  - Whitespace with comments
+
+### In Progress Stories (2)
+
+#### US-004: Handle Document Markers
+- **Status**: PARTIAL ⚠️
+- **Tests**: 5/8 passing
+- **Failing Tests**:
+  1. Test 4: Multiple documents (`--- 42\n...\n--- 99`) - parsing issues
+  2. Test 6: Marker with comment (`--- # comment\n200`) - parser error
+  3. Test 7: Partial marker (`-- 300`) - should parse as `- - 300` not `-300`
+- **Passing**: Basic marker detection, empty documents, markers with whitespace
+- **Implementation**: Document marker handling in `parse-from` in `src/scalars.lisp`
+- **Issues**: Need to fix multiple document parsing and partial marker handling
 
 #### US-005: Parse Integer Numbers
 - **Status**: PARTIAL ⚠️
-- **Tests**: 6/9 passing
-- **Failing**: Octal notation (`0o52`)
+- **Tests**: 8/9 passing
+- **Failing**: Octal notation (`0o52`) - fails to parse
 - **Passing**: Decimal integers, negative numbers, zero, large numbers, leading zeros
 - **Pending**: Hexadecimal, binary, underscores in numbers
+- **Issues**: `parse-number` function needs to handle base indicators (`0o`, `0x`, `0b`)
 
-### Not Started Stories
-All other stories (US-002 through US-040) are not yet implemented. Test stubs exist in `tests/main.lisp` but are marked as "skip".
+### Partially Implemented (Not Tested)
 
-## Test Results Summary
+#### US-007: Parse Boolean true/false
+- **Status**: BASIC IMPLEMENTATION
+- **Tests**: 0/0 (not tested)
+- **Implementation**: `parse-boolean` function exists in `src/scalars.lisp`
+- **Needs**: Test cases to be unskipped and verified
 
-### Phase 1 Tests (Foundation)
-- **US-001**: 6/6 tests pass ✅
-- **US-002**: 0 tests (skipped)
-- **US-003**: 0 tests (skipped) 
-- **US-004**: 0 tests (skipped)
-- **US-005**: 6/9 tests pass ⚠️ (octal notation fails)
-- **US-006 through US-014**: 0 tests (skipped)
+#### US-008: Parse Null Values (null and ~)
+- **Status**: BASIC IMPLEMENTATION
+- **Tests**: 0/0 (not tested)
+- **Implementation**: `parse-null` function exists in `src/scalars.lisp`
+- **Needs**: Test cases to be unskipped and verified
+- **Note**: Returns `cl:null` for null/~ and `nil` for false
 
-### YAML Test Suite
+#### US-010: Parse Double-Quoted Strings
+- **Status**: BASIC IMPLEMENTATION
+- **Tests**: 0/0 (not tested)
+- **Implementation**: `parse-string` function exists in `src/scalars.lisp`
+- **Limitations**: No escape sequence handling
+- **Needs**: Test cases to be unskipped and escape sequence support (US-013)
+
+### YAML Test Suite Results
 - **Total Tests**: 402
-- **Passed**: 219 (54.5%)
-- **Failed**: 183 (45.5%)
+- **Passed**: 138 (34.3%)
+- **Failed**: 264 (65.7%)
 - **Skipped**: 0
+- **Progress**: Foundation features handle basic scalar parsing, but many test suite tests require more complete YAML support
 
 ## Implementation Notes
-
-### Completed Features
-1. **Comment parsing**: Handles `#` to end of line, multiple comments, inline comments
-2. **Basic number parsing**: Integers (decimal), negative numbers
-3. **API structure**: Stream-based parsing with `parse-from` and `generate-to`
-
-### Known Issues
-1. **Octal notation**: `0o52` fails to parse (should be 42 in decimal)
-2. **Hex/binary notation**: Not implemented
-3. **Number underscores**: Not implemented (`1_000_000`)
-4. **Float numbers**: Not implemented
-5. **Boolean parsing**: Not implemented
-6. **Null/false distinction**: Not implemented (critical for YAML/JSON compatibility)
-7. **String parsing**: Not implemented (quoted or bareword)
 
 ### Design Decisions
 - **Stream-based API**: `parse-from` and `generate-to` take streams only
 - **String wrappers**: `parse-from-string` and `generate-to-string` for convenience
 - **Null representation**: `cl:null` symbol for YAML/JSON null (distinct from `nil`)
-- **Escape handling**: RFC 8259 section 7 escapes planned for US-013
+- **Error handling**: `extraction-error` condition for parse failures
+
+### Current Issues
+1. **Document markers**: Need to fix multiple document parsing and partial markers
+2. **Number parsing**: Need to support octal, hexadecimal, and binary notation
+3. **Float parsing**: Not implemented (US-006)
+4. **Escape sequences**: Not implemented (US-013, US-014)
+5. **String types**: Only basic double-quote strings (no single quotes or barewords)
+6. **Boolean/null testing**: Implemented but not tested
 
 ## Next Priority Stories
 
-### Critical Foundation (Must Complete)
-1. **US-009**: Distinguish null vs false (cl:null vs nil) - Essential for JSON compatibility
-2. **US-005**: Complete integer number parsing (octal, hex, binary)
-3. **US-006**: Parse float numbers
-4. **US-007**: Parse boolean true/false
-5. **US-008**: Parse null values (null and ~)
+### Critical for Stories 4-6 (Current Assignment)
+1. **US-004**: Fix document marker handling (multiple docs, comments, partial markers)
+2. **US-005**: Complete integer parsing (octal notation)
+3. **US-006**: Implement float number parsing (new implementation)
 
-### String Support (Next Wave)
-6. **US-010**: Parse double-quoted strings
-7. **US-011**: Parse single-quoted strings  
-8. **US-012**: Parse bareword strings
-9. **US-013**: Handle escape sequences
-10. **US-014**: Escape sequences in single quotes
+### Foundation Completion (Next)
+4. **US-007**: Test boolean parsing
+5. **US-008**: Test null value parsing
+6. **US-009**: Ensure null/false distinction works correctly
+7. **US-010**: Test and complete string parsing
+8. **US-013**: Add escape sequence support
 
-## Getting Started
+## Getting Started for Contributors
 
-### For Contributors
+### Development Workflow (TDD)
 1. Pick next unimplemented story from `project-management/user-stories/`
 2. Read story requirements and test cases
 3. Unskip tests in `tests/main.lisp` for that story

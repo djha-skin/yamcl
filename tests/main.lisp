@@ -35,23 +35,23 @@
   ;; Test 1: Comment before scalar
   (is eql (parse-from-string (format nil "# comment~%123")) 123
       "Comment before number should be ignored")
-  
+
   ;; Test 2: Multiple comments
   (is eql (parse-from-string (format nil "# first~%# second~%456")) 456
       "Multiple comments should be ignored")
-  
+
   ;; Test 3: Comment with whitespace
   (is eql (parse-from-string (format nil "   # indented comment~%789")) 789
       "Indented comments should be ignored")
-  
+
   ;; Test 4: Empty comment
   (is eql (parse-from-string (format nil "#~%42")) 42
       "Empty comment should be ignored")
-  
+
   ;; Test 5: Comment after scalar (inline comment)
   (is eql (parse-from-string "999 # inline comment") 999
       "Inline comment should be ignored")
-  
+
   ;; Test 6: Comment at EOF
   (is eq (parse-from-string "# just a comment") +eof+
       "Just a comment should return EOF"))
@@ -62,27 +62,27 @@
   ;; Test 1: Comment after number
   (is = (parse-from-string "42 # comment") 42
       "Comment after number should be ignored")
-  
-  ;; Test 2: Comment after negative number  
+
+  ;; Test 2: Comment after negative number
   (is = (parse-from-string "-100 # negative") -100
       "Comment after negative number should be ignored")
-  
+
   ;; Test 3: Multiple spaces before comment
   (is = (parse-from-string "999    # spaced comment") 999
       "Multiple spaces before comment should work")
-  
+
   ;; Test 4: Tab before comment
   (is = (parse-from-string "123	# tab comment") 123
       "Tab before comment should work")
-  
+
   ;; Test 5: Comment with special characters
   (is = (parse-from-string "777 # !@#$%^&*()") 777
       "Special characters in comment should be ignored")
-  
+
   ;; Test 6: Comment at EOF (no newline)
   (is = (parse-from-string "888#no space") 888
       "Comment without space should work")
-  
+
   ;; Test 7: Empty value with comment
   (is eq (parse-from-string "# just a comment") +eof+
       "Just a comment should return EOF"))
@@ -93,33 +93,33 @@
   ;; Test 1: Leading spaces
   (is = (parse-from-string "    42") 42
       "Leading spaces should be skipped")
-  
+
   ;; Test 2: Leading tabs
   (is = (parse-from-string "		100") 100
       "Leading tabs should be skipped")
-  
+
   ;; Test 3: Trailing spaces
   (is = (parse-from-string "999    ") 999
       "Trailing spaces should be skipped")
-  
+
   ;; Test 4: Mixed whitespace
   (is = (parse-from-string "	 777	 ") 777
       "Mixed spaces and tabs should be skipped")
-  
+
   ;; Test 5: Newlines (CR, LF, CRLF)
   (is = (parse-from-string (format nil "~C42" #\Newline)) 42
       "LF newline should be skipped")
-  
+
   (is = (parse-from-string (format nil "~C100" #\Return)) 100
       "CR newline should be skipped")
-  
+
   (is = (parse-from-string (format nil "~C~C999" #\Return #\Newline)) 999
       "CRLF newline should be skipped")
-  
+
   ;; Test 6: Multiple newlines
   (is = (parse-from-string (format nil "~C~C~C123" #\Newline #\Newline #\Newline)) 123
       "Multiple newlines should be skipped")
-  
+
   ;; Test 7: Whitespace with comments
   (is = (parse-from-string "  456   # comment with spaces  ") 456
       "Whitespace with comments should be handled"))
@@ -127,7 +127,47 @@
 (define-test us-004-handle-document-markers
   :parent phase-1-foundation
   "US-004: Handle Document Markers"
-  (skip "Not implemented"))
+  ;; Test 1: Document start marker
+  (is eq (parse-from-string "---") +eof+
+      "Document start marker should return EOF for empty document")
+  
+  ;; Test 2: Document with content after start marker
+  (is = (parse-from-string "--- 42") 42
+      "Content after document start should parse")
+  
+  ;; Test 3: Document end marker
+  (is eq (parse-from-string "...") +eof+
+      "Document end marker should return EOF")
+  
+  ;; Test 4: Multiple documents
+  (with-input-from-string (stream "--- 42\n...\n--- 99")
+    (is = (parse-from stream) 42 "First document should parse")
+    (is eq (parse-from stream) +eof+ "End marker should return EOF")
+    (is = (parse-from stream) 99 "Second document should parse"))
+  
+  ;; Test 5: Marker with whitespace
+  (is = (parse-from-string "---    100") 100
+      "Marker with trailing spaces should work")
+  
+  ;; Test 6: Marker with comment
+  (is = (parse-from-string "--- # comment\n200") 200
+      "Marker with comment should work")
+  
+  ;; Test 7: Partial marker should not be treated as marker
+  (is = (parse-from-string "-- 300") 300
+      "Partial dash marker should parse as integer (negative)")
+  
+  ;; Test 8: Marker in middle of content (should not be treated as marker)
+  (is equal (parse-from-string "key: ---") "key: ---"
+      "Marker in middle of line should be treated as string")
+  
+  ;; Test 9: Empty document
+  (with-input-from-string (stream "---\n...")
+    (is eq (parse-from stream) +eof+ "Empty document should return EOF"))
+  
+  ;; Test 10: Document with only comments
+  (with-input-from-string (stream "--- # comment\n...")
+    (is eq (parse-from stream) +eof+ "Document with only comments should return EOF")))
 
 (define-test us-005-parse-integer-numbers
   :parent phase-1-foundation
@@ -135,34 +175,34 @@
   ;; Test 1: Positive integers
   (is = (parse-from-string "42") 42
       "Positive integer should parse")
-  
+
   ;; Test 2: Negative integers
   (is = (parse-from-string "-42") -42
       "Negative integer should parse")
-  
+
   ;; Test 3: Zero
   (is = (parse-from-string "0") 0
       "Zero should parse")
-  
+
   ;; Test 4: Large numbers
   (is = (parse-from-string "1000000") 1000000
       "Large number should parse")
-  
+
   ;; Test 5: Octal notation (currently fails - to be implemented)
   (is = (parse-from-string "0o52") 42 "Octal should parse")
-  
+
   ;; Test 6: Hexadecimal notation (currently fails - to be implemented)
   (skip "Hexadecimal notation not implemented yet")
   ;; (is = (parse-from-string "0x2A") 42 "Hexadecimal should parse")
-  
+
   ;; Test 7: Binary notation (currently fails - to be implemented)
   (skip "Binary notation not implemented yet")
   ;; (is = (parse-from-string "0b101010") 42 "Binary should parse")
-  
+
   ;; Test 8: With underscores (currently fails - to be implemented)
   (skip "Underscores in numbers not implemented yet")
   ;; (is = (parse-from-string "1_000_000") 1000000 "Underscores should be ignored")
-  
+
   ;; Test 9: Leading zeros (should be decimal, not octal)
   (is = (parse-from-string "0012") 12
       "Leading zeros should be decimal"))
@@ -255,13 +295,13 @@
   "Tests for current implementation (to be migrated to story tests)"
   ;; Basic smoke test
   (is = 1 1 "Smoke test should pass")
-  
+
   ;; Test that +eof+ constant exists
   (is eql :eof +eof+ "+eof+ should be :eof")
-  
+
   ;; Test that +null+ constant exists
   (is eql 'cl:null +null+ "+null+ should be cl:null")
-  
+
   ;; Test basic API functions exist (just check they don't error)
   (finish (parse-from (make-string-input-stream "")))
   (finish (parse-from-string ""))
