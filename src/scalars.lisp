@@ -24,16 +24,17 @@
 
 (defun blankspace-p (ch)
   "Check if character is a blankspace (space or tab)."
-  (or (char= ch #\Space) (char= ch #\Tab)))
+  (and (characterp ch)
+       (or (char= ch #\Space) (char= ch #\Tab))))
 
 (defun whitespace-p (ch)
   "Check if character is any whitespace."
-  (when (characterp ch)
-    (or (char= ch #\Newline)
-        (char= ch #\Return)
-        (char= ch #\Tab)
-        (char= ch #\Space)
-        (blankspace-p ch))))
+  (and (characterp ch)
+       (or (char= ch #\Newline)
+           (char= ch #\Return)
+           (char= ch #\Tab)
+           (char= ch #\Space)
+           (blankspace-p ch))))
 
 (defun build-string (list)
   "Build a string from a list of characters, reversing the list."
@@ -54,24 +55,32 @@ Returns +eof+ at end of input."
 (defun skip-whitespace-and-comments (source)
   "Skip blankspaces, newlines, and comments in SOURCE.
 Returns the first non-skipped character (peeked)."
-  (let ((ch (peek-chr source)))
-    (loop while (or (blankspace-p ch)
-                    (char= ch #\Newline)
-                    (char= ch #\,)
-                    (char= ch #\#))
-          do (cond
-               ((or (blankspace-p ch) (char= ch #\,))
-                (read-chr source))
-               ((char= ch #\Newline)
-                (read-chr source))
-               ((char= ch #\#)
-                (read-chr source)
-                ;; Skip comment
-                (loop while (and (characterp (peek-chr source))
-                                 (not (char= (peek-chr source) #\Newline)))
-                      do (read-chr source))))
-             (setf ch (peek-chr source)))
-    ch))
+  (loop for ch = (peek-chr source)
+        while (and (not (eq ch +eof+))
+                   (or (blankspace-p ch)
+                       (whitespace-p ch)
+                       (char= ch #\,)
+                       (char= ch #\#)))
+        do (cond
+             ((or (blankspace-p ch) (char= ch #\,))
+              (read-chr source))
+             ((whitespace-p ch)
+              (read-chr source))
+             ((char= ch #\#)
+              (read-chr source) ; consume #
+              ;; Skip until end of line (newline/return) or EOF
+              (loop for next = (peek-chr source)
+                    while (and (characterp next)
+                               (not (or (char= next #\Newline)
+                                        (char= next #\Return))))
+                    do (read-chr source))
+              ;; Consume the newline/return if present
+              (let ((next (peek-chr source)))
+                (when (and (characterp next)
+                           (or (char= next #\Newline)
+                               (char= next #\Return)))
+                  (read-chr source))))))
+  (peek-chr source))
 
 (defun parse-boolean (source)
   "Parse a boolean value (true/false) from SOURCE.
@@ -107,10 +116,10 @@ Returns NIL for false."
        (read-chr source) ;; u
        (read-chr source) ;; l
        (read-chr source) ;; l
-       +null+)
+       'cl:null)
       ((char= ch #\~)
        (read-chr source)
-       +null+)
+       'cl:null)
       ((char= ch #\f)
        (read-chr source) ;; f
        (read-chr source) ;; a

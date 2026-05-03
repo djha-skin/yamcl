@@ -24,7 +24,7 @@
 (in-package #:com.djhaskin.yamcl/utils)
 
 (defconstant +eof+ :eof)
-(defconstant +null+ :null)
+(defconstant +null+ 'cl:null)
 
 (deftype streamable ()
   '(or boolean stream))

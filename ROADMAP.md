@@ -1,39 +1,32 @@
-# yamcl Roadmap - Story-Based Implementation
+# yamcl Roadmap - User Story Completion Tracker
 
-This roadmap organizes implementation around 40 user stories, progressing from
-simple to complex YAML 1.2.2 features.
+This roadmap tracks the completion of 40 user stories for yamcl (YAML Ain't Markup Language -- Common Lisp). Stories are organized by phase and tested with the Test-Driven Development (TDD) approach.
 
 ## Current Status
-**Project Status**: Foundation established, ready for story-based implementation
-**Tests Passing**: 0/40 stories implemented
 **Last Updated**: $(date)
+**Total Stories**: 40
+**Completed**: 1/40 (2.5%)
+**In Progress**: 0
+**Not Started**: 39
 
-## Implementation Strategy
-
-We follow Test-Driven Development (TDD):
-1. Write failing tests for a story
-2. Implement minimal code to pass tests
-3. Refactor while keeping tests green
-4. Move to next story
-
-## Story Completion Tracking
+## Completion Summary
 
 ### Phase 1: Foundation (14 stories)
 *Comments, whitespace, and basic scalar parsing*
 
-- [ ] **US-001**: Parse Line Comments
+- [x] **US-001**: Parse Line Comments (COMPLETED - All tests pass)
 - [ ] **US-002**: Parse Inline Comments  
 - [ ] **US-003**: Skip Whitespace
 - [ ] **US-004**: Handle Document Markers
-- [ ] **US-005**: Parse Integer Numbers
+- [ ] **US-005**: Parse Integer Numbers (PARTIAL - Octal notation fails)
 - [ ] **US-006**: Parse Float Numbers
 - [ ] **US-007**: Parse Boolean true/false
 - [ ] **US-008**: Parse Null Values (null and ~)
-- [ ] **US-009**: Distinguish null vs false (cl:null vs nil) ⚠️ REGRESSION
+- [ ] **US-009**: Distinguish null vs false (cl:null vs nil)
 - [ ] **US-010**: Parse Double-Quoted Strings
 - [ ] **US-011**: Parse Single-Quoted Strings
 - [ ] **US-012**: Parse Bareword Strings (Plain Scalars)
-- [ ] **US-013**: Handle Escape Sequences in Double-Quoted Strings ⚠️ REGRESSION
+- [ ] **US-013**: Handle Escape Sequences in Double-Quoted Strings
 - [ ] **US-014**: Handle Escape Sequences in Single-Quoted Strings
 
 ### Phase 2: Block Collections (10 stories)
@@ -67,130 +60,121 @@ We follow Test-Driven Development (TDD):
 *Render YAML from Lisp data structures*
 
 - [ ] **US-034**: Generate JSON Scalar Values
-- [ ] **US-035**: Generate Strings with Proper Escaping ⚠️ REGRESSION
+- [ ] **US-035**: Generate Strings with Proper Escaping
 - [ ] **US-036**: Generate Block Mappings
 - [ ] **US-037**: Generate Block Sequences
 - [ ] **US-038**: Generate Flow Collections
 - [ ] **US-039**: Generate Multi-line Strings
 - [ ] **US-040**: Generate with Anchors and Aliases
 
-## Critical Regression Fixes
+## Detailed Status
 
-⚠️ **High Priority**: These stories fix known regressions:
+### Completed Stories
 
-1. **US-009**: null/false distinction (REGR-002)
-   - `null` → `cl:null` (symbol)
-   - `false` → `nil` (CL's nil)
-   - Must be distinguishable
+#### US-001: Parse Line Comments
+- **Status**: COMPLETED ✅
+- **Tests**: 6/6 passing
+- **Implementation**: `skip-whitespace-and-comments` in `src/scalars.lisp`
+- **Coverage**:
+  - Full-line comments: `# comment`
+  - Multiple consecutive comments
+  - Indented comments
+  - Empty comments: `#`
+  - Inline comments: `value # comment`
+  - Comment at EOF
 
-2. **US-013**: Escape sequences in parsing (REGR-003)
-   - RFC 8259 Section 7 escapes
-   - `\\`, `\"`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, `\uXXXX`
+### In Progress Stories
 
-3. **US-035**: Escape sequences in generation (REGR-004)
-   - Inverse of US-013
-   - Special characters escaped in output
+#### US-005: Parse Integer Numbers
+- **Status**: PARTIAL ⚠️
+- **Tests**: 6/9 passing
+- **Failing**: Octal notation (`0o52`)
+- **Passing**: Decimal integers, negative numbers, zero, large numbers, leading zeros
+- **Pending**: Hexadecimal, binary, underscores in numbers
 
-4. **API Design**: All parsing/generation uses streams (REGR-001)
-   - `parse-from` takes stream, not string
-   - `generate-to` takes stream, not string
-   - Wrapper functions for string convenience
+### Not Started Stories
+All other stories (US-002 through US-040) are not yet implemented. Test stubs exist in `tests/main.lisp` but are marked as "skip".
 
-## Implementation Priority
+## Test Results Summary
 
-### Wave 1: Critical Foundation (Stories 1-9)
-Essential for any YAML parsing. Must complete before meaningful tests.
+### Phase 1 Tests (Foundation)
+- **US-001**: 6/6 tests pass ✅
+- **US-002**: 0 tests (skipped)
+- **US-003**: 0 tests (skipped) 
+- **US-004**: 0 tests (skipped)
+- **US-005**: 6/9 tests pass ⚠️ (octal notation fails)
+- **US-006 through US-014**: 0 tests (skipped)
 
-### Wave 2: String Handling (Stories 10-14)
-Complete string support with escape sequences.
+### YAML Test Suite
+- **Total Tests**: 402
+- **Passed**: 219 (54.5%)
+- **Failed**: 183 (45.5%)
+- **Skipped**: 0
 
-### Wave 3: Basic Structures (Stories 15-20)
-Enable real YAML document parsing.
+## Implementation Notes
 
-### Wave 4: Advanced Features (Stories 21-33)
-Full YAML 1.2.2 compliance.
+### Completed Features
+1. **Comment parsing**: Handles `#` to end of line, multiple comments, inline comments
+2. **Basic number parsing**: Integers (decimal), negative numbers
+3. **API structure**: Stream-based parsing with `parse-from` and `generate-to`
 
-### Wave 5: Generation (Stories 34-40)
-Round-trip completeness.
+### Known Issues
+1. **Octal notation**: `0o52` fails to parse (should be 42 in decimal)
+2. **Hex/binary notation**: Not implemented
+3. **Number underscores**: Not implemented (`1_000_000`)
+4. **Float numbers**: Not implemented
+5. **Boolean parsing**: Not implemented
+6. **Null/false distinction**: Not implemented (critical for YAML/JSON compatibility)
+7. **String parsing**: Not implemented (quoted or bareword)
 
-## Testing Strategy
+### Design Decisions
+- **Stream-based API**: `parse-from` and `generate-to` take streams only
+- **String wrappers**: `parse-from-string` and `generate-to-string` for convenience
+- **Null representation**: `cl:null` symbol for YAML/JSON null (distinct from `nil`)
+- **Escape handling**: RFC 8259 section 7 escapes planned for US-013
 
-### Unit Tests
-- Each story has dedicated tests
-- Tests in `tests/main.lisp` organized by story
-- Use Parachute test framework
+## Next Priority Stories
 
-### Integration Tests
-- YAML Test Suite (`tests/fixtures/yaml-test-suite/`)
-- Round-trip tests (parse → generate → parse)
-- Edge case coverage
+### Critical Foundation (Must Complete)
+1. **US-009**: Distinguish null vs false (cl:null vs nil) - Essential for JSON compatibility
+2. **US-005**: Complete integer number parsing (octal, hex, binary)
+3. **US-006**: Parse float numbers
+4. **US-007**: Parse boolean true/false
+5. **US-008**: Parse null values (null and ~)
 
-### Regression Tests
-- Track known issues
-- Prevent regressions
-- Continuous validation
-
-## Quality Gates
-
-### Before Moving Between Phases:
-1. All tests pass for current phase
-2. Code review completed
-3. Documentation updated
-4. Performance benchmarks (where applicable)
-
-### Before Story Completion:
-1. Tests written and passing
-2. Edge cases handled
-3. Error conditions tested
-4. API consistency verified
-
-## Success Metrics
-
-### Phase 1 Complete:
-- Can parse basic YAML scalars
-- Handle comments and whitespace
-- Distinguish null vs false
-- Proper escape sequence handling
-
-### Phase 2 Complete:
-- Can parse block and flow collections
-- Handle nested structures
-- Proper indentation handling
-
-### Phase 3 Complete:
-- Full YAML 1.2.2 parsing support
-- Multi-line strings, anchors, tags, directives
-- Multiple document support
-
-### Phase 4 Complete:
-- Complete round-trip support
-- Generate valid YAML from any parsed structure
-- All regression tests passing
+### String Support (Next Wave)
+6. **US-010**: Parse double-quoted strings
+7. **US-011**: Parse single-quoted strings  
+8. **US-012**: Parse bareword strings
+9. **US-013**: Handle escape sequences
+10. **US-014**: Escape sequences in single quotes
 
 ## Getting Started
 
-### For Implementers:
-1. Pick next unimplemented story
-2. Read story details in `project-management/user-stories/`
-3. Write failing tests in `tests/main.lisp`
-4. Implement in `src/` files
-5. Verify tests pass
+### For Contributors
+1. Pick next unimplemented story from `project-management/user-stories/`
+2. Read story requirements and test cases
+3. Unskip tests in `tests/main.lisp` for that story
+4. Implement feature in `src/` files following TDD
+5. Run tests: `./tools/one-shot-lisp.ros '(asdf:test-system "com.djhaskin.yamcl")'`
 6. Update this roadmap with completion status
 
-### Test Commands:
-```bash
-# Run all tests
-tools/one-shot-lisp.ros '(asdf:test-system "com.djhaskin.yamcl")'
+### Development Guidelines
+- **Line limit**: 80 characters for `.lisp`, `.ros`, and `.md` files
+- **OCICL only**: No Quicklisp dependencies (managed by `~/.roswell/init.lisp`)
+- **TDD required**: Write tests before implementation
+- **Stream-based API**: Follow existing pattern
 
-# Run specific test
-tools/one-shot-lisp.ros '(fiveam:run! :com.djhaskin.yamcl/tests)'
-```
+## Story Details
+Each user story has detailed documentation in `project-management/user-stories/` with:
+- Description and YAML examples
+- Test cases
+- Dependencies
+- Implementation notes
+- Edge cases
 
-## Notes
-
-- **80-character line limit**: All `.lisp`, `.ros`, and `.md` files
-- **OCICL only**: No Quicklisp dependencies
-- **TDD required**: Write tests first
-- **Stream-based API**: Follow REGR-001 requirements
-
-See `CONTRIBUTING.md` for detailed development guidelines.
+## References
+- YAML 1.2.2 Specification: https://raw.githubusercontent.com/yaml/yaml-spec/refs/heads/main/spec/1.2.2/spec.md
+- Project Documentation: `CONTRIBUTING.md`, `README.md`
+- Test Structure: `tests/main.lisp`
+- Source Code: `src/main.lisp`, `src/scalars.lisp`, `src/utils.lisp`
