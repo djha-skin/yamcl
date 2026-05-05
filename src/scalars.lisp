@@ -181,8 +181,8 @@ Detects and delegates to specific parsers."
       ((or (char= ch #\f) (char= ch #\n) (char= ch #\~)) (parse-null source))
       (t
        (error 'extraction-error
-              :format "Unexpected character: ~A"
-              :args (list ch))))))
+              :expected "valid scalar"
+              :got ch)))))
 
 (defun parse-from (source)
   "Parse a YAML scalar value from SOURCE.
@@ -193,11 +193,14 @@ Returns the parsed value or +eof+ at end of input."
     (cond
       ((eq ch +eof+)
        +eof+)
-      ;; Check for document start marker: ---
-      ((and (characterp ch) (char= ch #\-))
-       (let ((next1 (progn (read-chr source) (peek-chr source))))
+      ;; Check for document markers
+      ((or (char= ch #\-) (char= ch #\.))
+       (let ((next1 (progn (read-chr source) (peek-chr source)))
+             (first-char ch)) ; Save the first character
          (cond
-           ((and (characterp next1) (char= next1 #\-))
+           ;; Handle --- document start
+           ((and (char= first-char #\-)
+                 (characterp next1) (char= next1 #\-))
             (let ((next2 (progn (read-chr source) (peek-chr source))))
               (cond
                 ((and (characterp next2) (char= next2 #\-))
@@ -208,19 +211,15 @@ Returns the parsed value or +eof+ at end of input."
                  ;; Parse content after marker
                  (parse-from source))
                 (t
-                 ;; Not a document marker, treat as -- (which is not a valid number)
-                 (error 'extraction-error
-                        :expected '("number" "document marker")
-                        :got (format nil "--~A" next2))))))
-           (t
-            ;; Single dash - treat as negative number
-            (unread-char #\- source)
-            (parse-scalar source)))))
-      ;; Check for document end marker: ...
-      ((and (characterp ch) (char= ch #\.))
-       (let ((next1 (progn (read-chr source) (peek-chr source))))
-         (cond
-           ((and (characterp next1) (char= next1 #\.))
+                 ;; Not ---, so backtrack: we have -- which is invalid
+                 ;; Actually, -- could be - followed by -300
+                 (unread-char next1 source)
+                 (unread-char first-char source)
+                 (parse-scalar source)))))
+           
+           ;; Handle ... document end  
+           ((and (char= first-char #\.)
+                 (characterp next1) (char= next1 #\.))
             (let ((next2 (progn (read-chr source) (peek-chr source))))
               (cond
                 ((and (characterp next2) (char= next2 #\.))
@@ -228,13 +227,15 @@ Returns the parsed value or +eof+ at end of input."
                  (read-chr source) ; consume third .
                  +eof+) ; document end marker returns EOF
                 (t
-                 ;; Not a document marker, treat as .. (which is not valid)
-                 (error 'extraction-error
-                        :expected '("document end marker")
-                        :got (format nil "..~A" next2))))))
+                 ;; Not ..., so backtrack
+                 (unread-char next1 source)
+                 (unread-char first-char source)
+                 (parse-scalar source)))))
+           
            (t
-            ;; Single dot - could be start of float like .5
-            (unread-char #\. source)
+            ;; Single dash or dot - not a document marker
+            (unread-char next1 source)
+            (unread-char first-char source)
             (parse-scalar source)))))
       (t
        (parse-scalar source)))))

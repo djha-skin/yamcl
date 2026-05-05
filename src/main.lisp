@@ -4,66 +4,14 @@
 (cl:defpackage :com.djhaskin.yamcl
   (:use :cl)
   (:export
-   ;; Constants
-   :+eof+
-   :+null+
    ;; Parsing
    :parse-from
    :parse-from-string
    ;; Generation
    :generate-to
-   :generate-to-string
-   ;; Conditions
-   :extraction-error
-   :extraction-error-format
-   :extraction-error-args
-   ;; Structures
-   :char-queue
-   :char-queue-chars
-   ;; Character queue operations
-   :cq-append
-   :cq-peek
-   :cq-pop))
+   :generate-to-string))
 
 (cl:in-package :com.djhaskin.yamcl)
-
-(define-condition extraction-error (error)
-  ((format
-    :initarg :format
-    :reader extraction-error-format)
-   (args
-    :initarg :args
-    :reader extraction-error-args
-    :initform nil))
-  (:report (lambda (condition stream)
-             (format stream
-                     (extraction-error-format condition)
-                     (apply #'format nil
-                            (extraction-error-args condition))))))
-
-;;; Constants
-
-(defconstant +eof+ ':eof)
-(defconstant +null+ 'cl:null)
-
-;;; Character Queue
-
-(defstruct char-queue
-  (chars nil :type list))
-
-(defun cq-append (cq char)
-  "Append a character to the end of a char-queue."
-  (push char (char-queue-chars cq)))
-
-(defun cq-peek (cq)
-  "Peek at the next character without consuming it."
-  (let ((chars (char-queue-chars cq)))
-    (when chars
-      (car chars))))
-
-(defun cq-pop (cq)
-  "Pop and return the next character."
-  (pop (char-queue-chars cq)))
 
 ;;; Parsing (implemented in scalars.lisp)
 

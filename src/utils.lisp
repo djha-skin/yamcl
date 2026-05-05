@@ -1,4 +1,4 @@
-;;;; Copyright (c) 2026 by Daniel J. Haskin. All rights reserved.
+;;;; Copyright (c) 2026 by Daniel J. Haskin.
 ;;;; Use and distribution are subject to the license terms in the LICENSE file
 ;;;; that is part of this source code distribution.
 ;;;;
@@ -12,15 +12,18 @@
     #:streamable
     #:streamed
     #:extraction-error
-    #:extraction-error-format
-    #:extraction-error-args
     #:must-read-chr
     #:peek-chr
     #:read-chr
     #:number-start-p
     #:number-char-p
     #:list-string
-   #:yaml-number-to-cl))
+    #:yaml-number-to-cl
+    #:lookahead-stream
+    #:new-lookahead-stream
+    #:unread-all
+    #:lookahead-read-chr
+    #:lookahead-peek-chr))
 
 (in-package #:com.djhaskin.yamcl/utils)
 
@@ -51,11 +54,13 @@
      (let* ((gotc (got c))
             (gotc-title (nameof gotc))
             (expected (expected c)))
-       (format s
-             "Expected ~v[nothing~;~:;one of ~]~{`~A`~^~#[~; or ~:;, ~]~}; got `~A`"
-             (length expected)
-             (mapcar #'nameof expected)
-             gotc-title)))))
+       (if (listp expected)
+           (format s
+                   "Expected ~v[nothing~;~:;one of ~]~{`~A`~^~#[~; or ~:;, ~]~}; got `~A`"
+                   (length expected)
+                   (mapcar #'nameof expected)
+                   gotc-title)
+           (format s "Expected `~A`; got `~A`" expected gotc-title))))))
 
 (defun peek-chr (strm)
   (declare (type streamable strm))
@@ -74,15 +79,13 @@
   (buffer-start 0 :type integer)
   (buffer nil :type array))
 
-(defun make-lookahead-stream (strm &key buffer-size)
+(defun new-lookahead-stream (strm &key buffer-size)
   (declare (type streamable strm))
-  (let ((initial-buffer
-          (make-array
-           buffer-size
-           :element-type 'character)))
+  (let ((initial-buffer (make-array buffer-size :initial-element +eof+)))
     (loop for i from 0 below buffer-size
+          for chr = (read-chr strm)
           do
-          (setf (elt initial-buffer i) (read-chr strm)))
+          (setf (elt initial-buffer i) chr))
     (make-lookahead-stream :strm strm :buffer initial-buffer
                            :buffer-start 0)))
 
@@ -90,19 +93,23 @@
   (declare (type lookahead-stream lookahead))
   (let ((buffer (lookahead-stream-buffer lookahead)))
     (loop for i from (1- (length buffer)) downto 0
+          for chr = (elt buffer i)
+          when (characterp chr)
           do
-          (unread-char (elt buffer i) (lookahead-stream-strm lookahead))
-          (setf (elt buffer i) #\Null))
+          (unread-char chr (lookahead-stream-strm lookahead))
+          (setf (elt buffer i) +eof+))
     (setf (lookahead-stream-buffer-start lookahead) 0)))
 
 (defun lookahead-read-chr (lookahead)
   (declare (type lookahead-stream lookahead))
   (let ((buffer (lookahead-stream-buffer lookahead)))
-    (let* ((index (mod (1+ (lookahead-stream-buffer-start lookahead))
-                    (length buffer)))
-           (chr (elt buffer (lookahead-stream-buffer-start lookahead))))
-      (setf (lookahead-stream-buffer-start lookahead) index)
-      (setf (elt buffer index) (read-chr (lookahead-stream-strm lookahead)))
+    (let* ((current-index (lookahead-stream-buffer-start lookahead))
+           (chr (elt buffer current-index))
+           (next-index (mod (1+ current-index) (length buffer))))
+      ;; Read new character into the slot we just consumed
+      (setf (elt buffer current-index) (read-chr (lookahead-stream-strm lookahead)))
+      ;; Advance buffer start
+      (setf (lookahead-stream-buffer-start lookahead) next-index)
       chr)))
 
 (defun lookahead-peek-chr (lookahead n)
