@@ -2,21 +2,11 @@
 ;;;; yamcl - YAML scalar parsing
 
 (defpackage #:com.djhaskin.yamcl/scalars
-  (:use #:cl
-        #:com.djhaskin.yamcl/utils)
+  (:use #:cl #:com.djhaskin.yamcl/utils)
   (:export
-   #:parse-scalar
-   #:parse-scalar-from-string
-   #:parse-boolean
-   #:parse-null
-   #:parse-number
-   #:parse-string
-   #:peek-chr
-   #:read-chr
-   #:skip-whitespace-and-comments
-   #:blankspace-p
-   #:whitespace-p
-   #:build-string))
+   #:parse-from
+   #:parse-from-string
+   #:parse-scalar-from-string))
 
 (in-package #:com.djhaskin.yamcl/scalars)
 
@@ -40,22 +30,14 @@
   "Build a string from a list of characters, reversing the list."
   (coerce (reverse list) 'string))
 
-(defun peek-chr (source)
-  "Peek at the next character in SOURCE without consuming it.
-SOURCE must be a stream.
-Returns +eof+ at end of input."
-  (peek-char nil source nil +eof+ nil))
 
-(defun read-chr (source)
-  "Read and return the next character from SOURCE, consuming it.
-SOURCE must be a stream.
-Returns +eof+ at end of input."
-  (read-char source nil +eof+ nil))
 
-(defun skip-whitespace-and-comments (source)
-  "Skip blankspaces, newlines, and comments in SOURCE.
+
+
+(defun skip-whitespace-and-comments-lookahead (lookahead)
+  "Skip blankspaces, newlines, and comments in LOOKAHEAD.
 Returns the first non-skipped character (peeked)."
-  (loop for ch = (peek-chr source)
+  (loop for ch = (lookahead-peek-chr lookahead 0)
         while (and (not (eq ch +eof+))
                    (or (blankspace-p ch)
                        (whitespace-p ch)
@@ -63,80 +45,80 @@ Returns the first non-skipped character (peeked)."
                        (char= ch #\#)))
         do (cond
              ((or (blankspace-p ch) (char= ch #\,))
-              (read-chr source))
+              (lookahead-read-chr lookahead))
              ((whitespace-p ch)
-              (read-chr source))
+              (lookahead-read-chr lookahead))
              ((char= ch #\#)
-              (read-chr source) ; consume #
+              (lookahead-read-chr lookahead) ; consume #
               ;; Skip until end of line (newline/return) or EOF
-              (loop for next = (peek-chr source)
+              (loop for next = (lookahead-peek-chr lookahead 0)
                     while (and (characterp next)
                                (not (or (char= next #\Newline)
                                         (char= next #\Return))))
-                    do (read-chr source))
+                    do (lookahead-read-chr lookahead))
               ;; Consume the newline/return if present
-              (let ((next (peek-chr source)))
+              (let ((next (lookahead-peek-chr lookahead 0)))
                 (when (and (characterp next)
                            (or (char= next #\Newline)
                                (char= next #\Return)))
-                  (read-chr source))))))
-  (peek-chr source))
+                  (lookahead-read-chr lookahead))))))
+  (lookahead-peek-chr lookahead 0))
 
-(defun parse-boolean (source)
-  "Parse a boolean value (true/false) from SOURCE.
+(defun parse-boolean (lookahead)
+  "Parse a boolean value (true/false) from LOOKAHEAD.
 Returns T or NIL."
-  (let ((ch (peek-chr source)))
+  (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
       ((char= ch #\t)
-       (read-chr source) ;; t
-       (read-chr source) ;; r
-       (read-chr source) ;; u
-       (read-chr source) ;; e
+       (lookahead-read-chr lookahead) ;; t
+       (lookahead-read-chr lookahead) ;; r
+       (lookahead-read-chr lookahead) ;; u
+       (lookahead-read-chr lookahead) ;; e
        t)
       ((char= ch #\f)
-       (read-chr source) ;; f
-       (read-chr source) ;; a
-       (read-chr source) ;; l
-       (read-chr source) ;; s
-       (read-chr source) ;; e
+       (lookahead-read-chr lookahead) ;; f
+       (lookahead-read-chr lookahead) ;; a
+       (lookahead-read-chr lookahead) ;; l
+       (lookahead-read-chr lookahead) ;; s
+       (lookahead-read-chr lookahead) ;; e
        nil)
       (t
        (error 'extraction-error
               :expected "true or false"
               :got ch)))))
 
-(defun parse-null (source)
-  "Parse a null value from SOURCE.
+(defun parse-null (lookahead)
+  "Parse a null value from LOOKAHEAD.
 Returns +null+ for null/~.
 Returns NIL for false."
-  (let ((ch (peek-chr source)))
+  (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
       ((char= ch #\n)
-       (read-chr source) ;; n
-       (read-chr source) ;; u
-       (read-chr source) ;; l
-       (read-chr source) ;; l
+       (lookahead-read-chr lookahead) ;; n
+       (lookahead-read-chr lookahead) ;; u
+       (lookahead-read-chr lookahead) ;; l
+       (lookahead-read-chr lookahead) ;; l
        'cl:null)
       ((char= ch #\~)
-       (read-chr source)
+       (lookahead-read-chr lookahead)
        'cl:null)
       ((char= ch #\f)
-       (read-chr source) ;; f
-       (read-chr source) ;; a
-       (read-chr source) ;; l
-       (read-chr source) ;; s
-       (read-chr source) ;; e
+       (lookahead-read-chr lookahead) ;; f
+       (lookahead-read-chr lookahead) ;; a
+       (lookahead-read-chr lookahead) ;; l
+       (lookahead-read-chr lookahead) ;; s
+       (lookahead-read-chr lookahead) ;; e
        nil)
       (t
        (error 'extraction-error
               :expected "null, false, or ~"
               :got ch)))))
 
-(defun parse-number (source)
-  "Parse a number from SOURCE.
+(defun parse-number (lookahead)
+  "Parse a number from LOOKAHEAD.
 Handles integers and floats with optional exponent."
   (let ((buffer (make-string-output-stream)))
-    (loop for ch = (peek-chr source)
+    (loop for ch = (lookahead-peek-chr lookahead 0)
           while (and (characterp ch)
                      (or (digit-char-p ch)
                          (char= ch #\.)
@@ -148,37 +130,37 @@ Handles integers and floats with optional exponent."
                          (char= ch #\o)
                          (char= ch #\x)
                          (char= ch #\b)))
-          do (write-char (read-chr source) buffer))
+          do (write-char (lookahead-read-chr lookahead) buffer))
     (let ((str (get-output-stream-string buffer)))
       (if (string= str "")
-          (error 'extraction-error :expected "number" :got (peek-chr source))
+          (error 'extraction-error :expected "number" :got (lookahead-peek-chr lookahead 0))
           ;; Convert YAML number syntax to Common Lisp syntax
           (let ((converted (yaml-number-to-cl str)))
             (read-from-string converted))))))
 
-(defun parse-string (source)
-  "Parse a double-quoted string from SOURCE."
-  (read-chr source) ;; consume opening quote
+(defun parse-string (lookahead)
+  "Parse a double-quoted string from LOOKAHEAD."
+  (lookahead-read-chr lookahead) ;; consume opening quote
   (let ((buffer (make-string-output-stream)))
-    (loop for ch = (peek-chr source)
+    (loop for ch = (lookahead-peek-chr lookahead 0)
           while (and (characterp ch)
                      (not (char= ch #\")))
-          do (write-char (read-chr source) buffer))
-    (read-chr source) ;; consume closing quote
+          do (write-char (lookahead-read-chr lookahead) buffer))
+    (lookahead-read-chr lookahead) ;; consume closing quote
     (get-output-stream-string buffer)))
 
-(defun parse-scalar (source)
-  "Parse a scalar value from SOURCE.
+(defun parse-scalar-lookahead (lookahead)
+  "Parse a scalar value from LOOKAHEAD.
 Detects and delegates to specific parsers."
-  (skip-whitespace-and-comments source)
-  (let ((ch (peek-chr source)))
+  (skip-whitespace-and-comments-lookahead lookahead)
+  (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
       ((eq ch +eof+) +eof+)
-      ((char= ch #\") (parse-string source))
-      ((digit-char-p ch) (parse-number source))
-      ((or (char= ch #\-) (char= ch #\+)) (parse-number source))
-      ((char= ch #\t) (parse-boolean source))
-      ((or (char= ch #\f) (char= ch #\n) (char= ch #\~)) (parse-null source))
+      ((char= ch #\") (parse-string lookahead))
+      ((digit-char-p ch) (parse-number lookahead))
+      ((or (char= ch #\-) (char= ch #\+)) (parse-number lookahead))
+      ((char= ch #\t) (parse-boolean lookahead))
+      ((or (char= ch #\f) (char= ch #\n) (char= ch #\~)) (parse-null lookahead))
       (t
        (error 'extraction-error
               :expected "valid scalar"
@@ -188,57 +170,57 @@ Detects and delegates to specific parsers."
   "Parse a YAML scalar value from SOURCE.
 SOURCE must be a stream.
 Returns the parsed value or +eof+ at end of input."
-  (skip-whitespace-and-comments source)
-  (let ((ch (peek-chr source)))
+  ;; Create a lookahead-stream wrapper with buffer size 4
+  ;; (enough to check for --- and ... document markers)
+  (let ((lookahead (new-lookahead-stream source :buffer-size 4)))
+    ;; Call the internal parse function that works with lookahead-stream
+    (prog1
+        (parse-from-lookahead lookahead)
+      ;; Unread any buffered characters back to the stream
+      (unread-all lookahead))))
+
+(defun parse-from-lookahead (lookahead)
+  "Parse a YAML scalar value from LOOKAHEAD (a lookahead-stream).
+Internal function used by parse-from."
+  (skip-whitespace-and-comments-lookahead lookahead)
+  (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
       ((eq ch +eof+)
        +eof+)
-      ;; Check for document markers
+      ;; Check for document markers using peeking only (no consumption)
       ((or (char= ch #\-) (char= ch #\.))
-       (let ((next1 (progn (read-chr source) (peek-chr source)))
-             (first-char ch)) ; Save the first character
+       ;; Check if we have at least 3 characters to peek at
+       (let ((ch1 (lookahead-peek-chr lookahead 1))
+             (ch2 (lookahead-peek-chr lookahead 2)))
          (cond
-           ;; Handle --- document start
-           ((and (char= first-char #\-)
-                 (characterp next1) (char= next1 #\-))
-            (let ((next2 (progn (read-chr source) (peek-chr source))))
-              (cond
-                ((and (characterp next2) (char= next2 #\-))
-                 ;; Document start marker found
-                 (read-chr source) ; consume third -
-                 ;; Skip whitespace/comments after marker
-                 (skip-whitespace-and-comments source)
-                 ;; Parse content after marker
-                 (parse-from source))
-                (t
-                 ;; Not ---, so backtrack: we have -- which is invalid
-                 ;; Actually, -- could be - followed by -300
-                 (unread-char next1 source)
-                 (unread-char first-char source)
-                 (parse-scalar source)))))
+           ;; Handle --- document start (three dashes)
+           ((and (char= ch #\-) 
+                 (characterp ch1) (char= ch1 #\-)
+                 (characterp ch2) (char= ch2 #\-))
+            ;; Consume all three dashes
+            (lookahead-read-chr lookahead) ; first -
+            (lookahead-read-chr lookahead) ; second -
+            (lookahead-read-chr lookahead) ; third -
+            ;; Skip whitespace/comments after marker
+            (skip-whitespace-and-comments-lookahead lookahead)
+            ;; Parse content after marker
+            (parse-from-lookahead lookahead))
            
-           ;; Handle ... document end  
-           ((and (char= first-char #\.)
-                 (characterp next1) (char= next1 #\.))
-            (let ((next2 (progn (read-chr source) (peek-chr source))))
-              (cond
-                ((and (characterp next2) (char= next2 #\.))
-                 ;; Document end marker found
-                 (read-chr source) ; consume third .
-                 +eof+) ; document end marker returns EOF
-                (t
-                 ;; Not ..., so backtrack
-                 (unread-char next1 source)
-                 (unread-char first-char source)
-                 (parse-scalar source)))))
+           ;; Handle ... document end (three dots)  
+           ((and (char= ch #\.)
+                 (characterp ch1) (char= ch1 #\.)
+                 (characterp ch2) (char= ch2 #\.))
+            ;; Consume all three dots
+            (lookahead-read-chr lookahead) ; first .
+            (lookahead-read-chr lookahead) ; second .
+            (lookahead-read-chr lookahead) ; third .
+            +eof+) ; document end marker returns EOF
            
            (t
-            ;; Single dash or dot - not a document marker
-            (unread-char next1 source)
-            (unread-char first-char source)
-            (parse-scalar source)))))
+            ;; Not a document marker, parse as scalar
+            (parse-scalar-lookahead lookahead)))))
       (t
-       (parse-scalar source)))))
+       (parse-scalar-lookahead lookahead)))))
 
 (defun parse-from-string (string)
   "Parse a YAML scalar value from STRING.
