@@ -162,7 +162,7 @@ Handles:
   ;; Remove underscores first
   (let ((clean (remove #\_ yaml-str)))
     (cond
-      ;; Special float values
+      ;; Special float values - use SBCL-specific values if available
       ((string= clean ".inf") "1.0e1000") ; Positive infinity
       ((string= clean "-.inf") "-1.0e1000") ; Negative infinity  
       ((string= clean ".nan") "0.0d+NaN") ; NaN

@@ -66,21 +66,48 @@ Returns the first non-skipped character (peeked)."
 
 (defun parse-boolean (lookahead)
   "Parse a boolean value (true/false) from LOOKAHEAD.
-Returns T or NIL."
+Returns T or NIL. Case-sensitive: only 'true' and 'false' in lowercase."
   (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
       ((char= ch #\t)
-       (lookahead-read-chr lookahead) ;; t
-       (lookahead-read-chr lookahead) ;; r
-       (lookahead-read-chr lookahead) ;; u
-       (lookahead-read-chr lookahead) ;; e
+       ;; Parse "true" - read and verify each character
+       (lookahead-read-chr lookahead) ;; consume 't'
+       (unless (char= (lookahead-read-chr lookahead) #\r)
+         (error 'extraction-error :expected "true" :got ch))
+       (unless (char= (lookahead-read-chr lookahead) #\u)
+         (error 'extraction-error :expected "true" :got ch))
+       (unless (char= (lookahead-read-chr lookahead) #\e)
+         (error 'extraction-error :expected "true" :got ch))
+       ;; Check that we're at end of scalar (whitespace, comment, or EOF)
+       (let ((next-ch (lookahead-peek-chr lookahead 0)))
+         (when (and (characterp next-ch)
+                    (not (char= next-ch #\#)) ; comment
+                    (not (char= next-ch #\Space))
+                    (not (char= next-ch #\Tab))
+                    (not (char= next-ch #\Newline))
+                    (not (char= next-ch #\Return)))
+           (error 'extraction-error :expected "end of scalar after 'true'" :got next-ch)))
        t)
       ((char= ch #\f)
-       (lookahead-read-chr lookahead) ;; f
-       (lookahead-read-chr lookahead) ;; a
-       (lookahead-read-chr lookahead) ;; l
-       (lookahead-read-chr lookahead) ;; s
-       (lookahead-read-chr lookahead) ;; e
+       ;; Parse "false" - read and verify each character
+       (lookahead-read-chr lookahead) ;; consume 'f'
+       (unless (char= (lookahead-read-chr lookahead) #\a)
+         (error 'extraction-error :expected "false" :got ch))
+       (unless (char= (lookahead-read-chr lookahead) #\l)
+         (error 'extraction-error :expected "false" :got ch))
+       (unless (char= (lookahead-read-chr lookahead) #\s)
+         (error 'extraction-error :expected "false" :got ch))
+       (unless (char= (lookahead-read-chr lookahead) #\e)
+         (error 'extraction-error :expected "false" :got ch))
+       ;; Check that we're at end of scalar (whitespace, comment, or EOF)
+       (let ((next-ch (lookahead-peek-chr lookahead 0)))
+         (when (and (characterp next-ch)
+                    (not (char= next-ch #\#)) ; comment
+                    (not (char= next-ch #\Space))
+                    (not (char= next-ch #\Tab))
+                    (not (char= next-ch #\Newline))
+                    (not (char= next-ch #\Return)))
+           (error 'extraction-error :expected "end of scalar after 'false'" :got next-ch)))
        nil)
       (t
        (error 'extraction-error
@@ -116,7 +143,8 @@ Returns NIL for false."
 
 (defun parse-number (lookahead)
   "Parse a number from LOOKAHEAD.
-Handles integers and floats with optional exponent."
+Handles integers and floats with optional exponent.
+Returns keywords for special float values: :positive-infinity, :negative-infinity, :not-a-number"
   (let ((buffer (make-string-output-stream)))
     (loop for ch = (lookahead-peek-chr lookahead 0)
           while (and (characterp ch)
@@ -129,14 +157,33 @@ Handles integers and floats with optional exponent."
                          (char= ch #\_)
                          (char= ch #\o)
                          (char= ch #\x)
-                         (char= ch #\b)))
+                         (char= ch #\b)
+                         ;; Allow hex digits (both cases)
+                         (char= (char-upcase ch) #\A)
+                         (char= (char-upcase ch) #\B)
+                         (char= (char-upcase ch) #\C)
+                         (char= (char-upcase ch) #\D)
+                         (char= (char-upcase ch) #\E)
+                         (char= (char-upcase ch) #\F)
+                         ;; Allow letters for special float values (.inf, .nan)
+                         (char= (char-upcase ch) #\I)
+                         (char= (char-upcase ch) #\N)))
           do (write-char (lookahead-read-chr lookahead) buffer))
     (let ((str (get-output-stream-string buffer)))
       (if (string= str "")
           (error 'extraction-error :expected "number" :got (lookahead-peek-chr lookahead 0))
-          ;; Convert YAML number syntax to Common Lisp syntax
-          (let ((converted (yaml-number-to-cl str)))
-            (read-from-string converted))))))
+          ;; Check for special float values - return keywords for IEEE float compatibility
+          (cond
+            ((or (string-equal str ".inf") (string-equal str "+.inf"))
+             :positive-infinity)
+            ((string-equal str "-.inf")
+             :negative-infinity)
+            ((string-equal str ".nan")
+             :not-a-number)
+            (t
+             ;; Convert YAML number syntax to Common Lisp syntax
+             (let ((converted (yaml-number-to-cl str)))
+               (read-from-string converted))))))))
 
 (defun parse-string (lookahead)
   "Parse a double-quoted string from LOOKAHEAD."
@@ -158,7 +205,7 @@ Detects and delegates to specific parsers."
       ((eq ch +eof+) +eof+)
       ((char= ch #\") (parse-string lookahead))
       ((digit-char-p ch) (parse-number lookahead))
-      ((or (char= ch #\-) (char= ch #\+)) (parse-number lookahead))
+      ((or (char= ch #\-) (char= ch #\+) (char= ch #\.)) (parse-number lookahead))
       ((char= ch #\t) (parse-boolean lookahead))
       ((or (char= ch #\f) (char= ch #\n) (char= ch #\~)) (parse-null lookahead))
       (t

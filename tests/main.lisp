@@ -186,29 +186,115 @@
   (is = (parse-from-string "1000000") 1000000
       "Large number should parse")
 
-  ;; Test 5: Octal notation (currently fails - to be implemented)
+  ;; Test 5: Octal notation
   (is = (parse-from-string "0o52") 42 "Octal should parse")
 
-  ;; Test 6: Hexadecimal notation (currently fails - to be implemented)
-  (skip "Hexadecimal notation not implemented yet")
-  ;; (is = (parse-from-string "0x2A") 42 "Hexadecimal should parse")
+  ;; Test 6: Hexadecimal notation
+  (is = (parse-from-string "0x2A") 42 "Hexadecimal should parse")
 
-  ;; Test 7: Binary notation (currently fails - to be implemented)
-  (skip "Binary notation not implemented yet")
-  ;; (is = (parse-from-string "0b101010") 42 "Binary should parse")
+  ;; Test 7: Binary notation
+  (is = (parse-from-string "0b101010") 42 "Binary should parse")
 
-  ;; Test 8: With underscores (currently fails - to be implemented)
-  (skip "Underscores in numbers not implemented yet")
-  ;; (is = (parse-from-string "1_000_000") 1000000 "Underscores should be ignored")
+  ;; Test 8: With underscores
+  (is = (parse-from-string "1_000_000") 1000000 "Underscores should be ignored")
 
   ;; Test 9: Leading zeros (should be decimal, not octal)
   (is = (parse-from-string "0012") 12
-      "Leading zeros should be decimal"))
+      "Leading zeros should be decimal")
+
+  ;; Additional tests for edge cases
+  ;; Test 10: Hex with lowercase
+  (is = (parse-from-string "0x2a") 42 "Hexadecimal lowercase should parse")
+
+  ;; Test 11: Hex with mixed case
+  (is = (parse-from-string "0xDeAdBeEf") 3735928559 "Hex mixed case should parse")
+
+  ;; Test 12: Very large integer
+  (is = (parse-from-string "999999999999999999999999") 999999999999999999999999
+      "Very large integer should parse")
+
+  ;; Test 13: Binary with underscores
+  (is = (parse-from-string "0b1010_1010") 170 "Binary with underscores should parse")
+
+  ;; Test 14: Octal with underscores
+  (is = (parse-from-string "0o7_7_7") 511 "Octal with underscores should parse"))
 
 (define-test us-006-parse-float-numbers
   :parent phase-1-foundation
   "US-006: Parse Float Numbers"
-  (skip "Not implemented"))
+  ;; Test 1: Simple float
+  (is = (parse-from-string "3.14") 3.14
+      "Simple float should parse")
+
+  ;; Test 2: Negative float
+  (is = (parse-from-string "-3.14") -3.14
+      "Negative float should parse")
+
+  ;; Test 3: Exponent notation
+  (is = (parse-from-string "6.02e23") 6.02e23
+      "Exponent notation should parse")
+
+  ;; Test 4: Negative exponent
+  (is = (parse-from-string "1.6e-19") 1.6e-19
+      "Negative exponent should parse")
+
+  ;; Test 5: Capital E
+  (is = (parse-from-string "3.0E8") 3.0e8
+      "Capital E should parse")
+
+  ;; Test 6: With underscores
+  (is = (parse-from-string "1_000.5") 1000.5
+      "Float with underscores should parse")
+
+  ;; Test 7: Positive infinity
+  (is eq (parse-from-string ".inf") :positive-infinity
+      ".inf should parse to :positive-infinity keyword")
+
+  ;; Test 8: Positive infinity with explicit plus
+  (is eq (parse-from-string "+.inf") :positive-infinity
+      "+.inf should parse to :positive-infinity keyword")
+
+  ;; Test 9: Negative infinity
+  (is eq (parse-from-string "-.inf") :negative-infinity
+      "-.inf should parse to :negative-infinity keyword")
+
+  ;; Test 10: Not a number
+  (is eq (parse-from-string ".nan") :not-a-number
+      ".nan should parse to :not-a-number keyword")
+
+  ;; Test 11: No leading digit
+  (is = (parse-from-string ".5") 0.5
+      "No leading digit should parse as 0.5")
+
+  ;; Test 12: Trailing decimal point (should be integer)
+  (is = (parse-from-string "3.") 3
+      "Trailing decimal point should parse as integer")
+
+  ;; Test 13: Very small number
+  (is = (parse-from-string "1.0e-30") 1.0e-30
+      "Very small number should parse")
+
+  ;; Test 14: Very large number (but not overflow)
+  (is = (parse-from-string "1.0e30") 1.0e30
+      "Very large number should parse")
+
+  ;; Test 15: Zero with decimal
+  (is = (parse-from-string "0.0") 0.0
+      "Zero with decimal should parse as float")
+
+  ;; Test 16: Leading/trailing zeros
+  (is = (parse-from-string "0003.1400") 3.14
+      "Leading/trailing zeros should parse correctly")
+
+  ;; Test 17: Case variations for special values (should work case-insensitively)
+  (is eq (parse-from-string ".INF") :positive-infinity
+      ".INF should parse to :positive-infinity keyword (case-insensitive)")
+  (is eq (parse-from-string ".Inf") :positive-infinity
+      ".Inf should parse to :positive-infinity keyword (case-insensitive)")
+  (is eq (parse-from-string "-.INF") :negative-infinity
+      "-.INF should parse to :negative-infinity keyword (case-insensitive)")
+  (is eq (parse-from-string ".NAN") :not-a-number
+      ".NAN should parse to :not-a-number keyword (case-insensitive)"))
 
 (define-test us-007-parse-boolean-true-false
   :parent phase-1-foundation
