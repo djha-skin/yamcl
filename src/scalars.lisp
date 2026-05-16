@@ -6,7 +6,8 @@
   (:export
    #:parse-from
    #:parse-from-string
-   #:parse-scalar-from-string))
+   #:parse-scalar-from-string
+   #:parse-scalar-lookahead))
 
 (in-package #:com.djhaskin.yamcl/scalars)
 
@@ -66,18 +67,21 @@ Returns the first non-skipped character (peeked)."
 
 (defun parse-boolean (lookahead)
   "Parse a boolean value (true/false) from LOOKAHEAD.
-Returns T or NIL. Case-sensitive: only 'true' and 'false' in lowercase."
+Returns T or NIL. Case-insensitive per YAML 1.2.2 Core Schema."
   (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
-      ((char= ch #\t)
-       ;; Parse "true" - read and verify each character
-       (lookahead-read-chr lookahead) ;; consume 't'
-       (unless (char= (lookahead-read-chr lookahead) #\r)
-         (error 'extraction-error :expected "true" :got ch))
-       (unless (char= (lookahead-read-chr lookahead) #\u)
-         (error 'extraction-error :expected "true" :got ch))
-       (unless (char= (lookahead-read-chr lookahead) #\e)
-         (error 'extraction-error :expected "true" :got ch))
+      ((or (char= ch #\t) (char= ch #\T))
+       ;; Parse "true" - read and verify each character (case-insensitive)
+       (lookahead-read-chr lookahead) ;; consume 't' or 'T'
+       (let ((r (lookahead-read-chr lookahead))
+             (u (lookahead-read-chr lookahead))
+             (e (lookahead-read-chr lookahead)))
+         (unless (and (characterp r) (or (char= r #\r) (char= r #\R)))
+           (error 'extraction-error :expected "true (case-insensitive)" :got ch))
+         (unless (and (characterp u) (or (char= u #\u) (char= u #\U)))
+           (error 'extraction-error :expected "true (case-insensitive)" :got ch))
+         (unless (and (characterp e) (or (char= e #\e) (char= e #\E)))
+           (error 'extraction-error :expected "true (case-insensitive)" :got ch)))
        ;; Check that we're at end of scalar (whitespace, comment, or EOF)
        (let ((next-ch (lookahead-peek-chr lookahead 0)))
          (when (and (characterp next-ch)
@@ -88,17 +92,21 @@ Returns T or NIL. Case-sensitive: only 'true' and 'false' in lowercase."
                     (not (char= next-ch #\Return)))
            (error 'extraction-error :expected "end of scalar after 'true'" :got next-ch)))
        t)
-      ((char= ch #\f)
-       ;; Parse "false" - read and verify each character
-       (lookahead-read-chr lookahead) ;; consume 'f'
-       (unless (char= (lookahead-read-chr lookahead) #\a)
-         (error 'extraction-error :expected "false" :got ch))
-       (unless (char= (lookahead-read-chr lookahead) #\l)
-         (error 'extraction-error :expected "false" :got ch))
-       (unless (char= (lookahead-read-chr lookahead) #\s)
-         (error 'extraction-error :expected "false" :got ch))
-       (unless (char= (lookahead-read-chr lookahead) #\e)
-         (error 'extraction-error :expected "false" :got ch))
+      ((or (char= ch #\f) (char= ch #\F))
+       ;; Parse "false" - read and verify each character (case-insensitive)
+       (lookahead-read-chr lookahead) ;; consume 'f' or 'F'
+       (let ((a (lookahead-read-chr lookahead))
+             (l1 (lookahead-read-chr lookahead))
+             (s (lookahead-read-chr lookahead))
+             (e (lookahead-read-chr lookahead)))
+         (unless (and (characterp a) (or (char= a #\a) (char= a #\A)))
+           (error 'extraction-error :expected "false (case-insensitive)" :got ch))
+         (unless (and (characterp l1) (or (char= l1 #\l) (char= l1 #\L)))
+           (error 'extraction-error :expected "false (case-insensitive)" :got ch))
+         (unless (and (characterp s) (or (char= s #\s) (char= s #\S)))
+           (error 'extraction-error :expected "false (case-insensitive)" :got ch))
+         (unless (and (characterp e) (or (char= e #\e) (char= e #\E)))
+           (error 'extraction-error :expected "false (case-insensitive)" :got ch)))
        ;; Check that we're at end of scalar (whitespace, comment, or EOF)
        (let ((next-ch (lookahead-peek-chr lookahead 0)))
          (when (and (characterp next-ch)
@@ -111,30 +119,38 @@ Returns T or NIL. Case-sensitive: only 'true' and 'false' in lowercase."
        nil)
       (t
        (error 'extraction-error
-              :expected "true or false"
+              :expected "true or false (case-insensitive)"
               :got ch)))))
 
 (defun parse-null (lookahead)
   "Parse a null value from LOOKAHEAD.
-Returns +null+ for null/~.
+Returns cl:null for null/~ (case-insensitive for null per YAML Core Schema).
 Returns NIL for false."
   (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
-      ((char= ch #\n)
-       (lookahead-read-chr lookahead) ;; n
-       (lookahead-read-chr lookahead) ;; u
-       (lookahead-read-chr lookahead) ;; l
-       (lookahead-read-chr lookahead) ;; l
+      ((or (char= ch #\n) (char= ch #\N))
+       ;; Parse "null" - read and verify each character (case-insensitive)
+       (lookahead-read-chr lookahead) ;; consume 'n' or 'N'
+       (let ((u (lookahead-read-chr lookahead))
+             (l1 (lookahead-read-chr lookahead))
+             (l2 (lookahead-read-chr lookahead)))
+         (unless (and (characterp u) (or (char= u #\u) (char= u #\U)))
+           (error 'extraction-error :expected "null (case-insensitive)" :got ch))
+         (unless (and (characterp l1) (or (char= l1 #\l) (char= l1 #\L)))
+           (error 'extraction-error :expected "null (case-insensitive)" :got ch))
+         (unless (and (characterp l2) (or (char= l2 #\l) (char= l2 #\L)))
+           (error 'extraction-error :expected "null (case-insensitive)" :got ch)))
        'cl:null)
       ((char= ch #\~)
        (lookahead-read-chr lookahead)
        'cl:null)
-      ((char= ch #\f)
-       (lookahead-read-chr lookahead) ;; f
-       (lookahead-read-chr lookahead) ;; a
-       (lookahead-read-chr lookahead) ;; l
-       (lookahead-read-chr lookahead) ;; s
-       (lookahead-read-chr lookahead) ;; e
+      ((or (char= ch #\f) (char= ch #\F))
+       ;; Parse "false" - should be handled by parse-boolean, but keep for completeness
+       (lookahead-read-chr lookahead) ;; f or F
+       (lookahead-read-chr lookahead) ;; a or A  
+       (lookahead-read-chr lookahead) ;; l or L
+       (lookahead-read-chr lookahead) ;; s or S
+       (lookahead-read-chr lookahead) ;; e or E
        nil)
       (t
        (error 'extraction-error
@@ -185,6 +201,34 @@ Returns keywords for special float values: :positive-infinity, :negative-infinit
              (let ((converted (yaml-number-to-cl str)))
                (read-from-string converted))))))))
 
+(defun parse-escape-sequence (lookahead)
+  "Parse an escape sequence from LOOKAHEAD.
+Returns the character corresponding to the escape sequence.
+Handles JSON RFC 8259 Section 7 escapes."
+  ;; We've already consumed the backslash, so look at next character
+  (let ((ch (lookahead-read-chr lookahead)))
+    (cond
+      ((char= ch #\") #\")  ; \" → "
+      ((char= ch #\\) #\\)  ; \\ → \
+      ((char= ch #\/) #\/)  ; \/ → /
+      ((char= ch #\b) #\Backspace)  ; \b → backspace
+      ((char= ch #\f) #\Page)       ; \f → form feed (form feed is #\Page in CL)
+      ((char= ch #\n) #\Newline)    ; \n → newline
+      ((char= ch #\r) #\Return)     ; \r → carriage return
+      ((char= ch #\t) #\Tab)        ; \t → tab
+      ((char= ch #\u)              ; \uXXXX → Unicode character
+       ;; Parse 4 hexadecimal digits
+       (let* ((hex-chars (loop repeat 4
+                               for hex-char = (lookahead-read-chr lookahead)
+                               collect hex-char))
+              (hex-string (coerce hex-chars 'string))
+              (code (parse-integer hex-string :radix 16 :junk-allowed t)))
+         (if code
+             (code-char code)
+             (error 'extraction-error :expected "4 hexadecimal digits after \\u"
+                    :got (or (when hex-chars (car hex-chars)) +eof+)))))
+      (t (error 'extraction-error :expected "valid escape sequence" :got ch)))))
+
 (defun parse-string (lookahead)
   "Parse a quoted string from LOOKAHEAD.
 Handles both single-quoted (') and double-quoted (\") strings."
@@ -208,6 +252,11 @@ Handles both single-quoted (') and double-quoted (\") strings."
                    (write-char #\' buffer))
                  ;; It's the closing quote
                  (return)))
+            ((and (not is-single-quote) (char= ch #\\))
+             ;; Escape sequence in double-quoted string
+             (lookahead-read-chr lookahead) ;; consume the backslash
+             (let ((escaped-char (parse-escape-sequence lookahead)))
+               (write-char escaped-char buffer)))
             (t
              ;; Normal character
              (write-char (lookahead-read-chr lookahead) buffer)))))
@@ -216,44 +265,128 @@ Handles both single-quoted (') and double-quoted (\") strings."
 
 (defun starts-with-reserved-word-p (lookahead)
   "Check if the stream starts with a reserved word (true, false, null, ~).
-Returns the word if it's a reserved word, NIL otherwise."
+Returns the canonical lowercase word if it's a reserved word, NIL otherwise.
+Accepts specific case variations per YAML 1.2.2 Core Schema."
   (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
       ((char= ch #\t)
-       (and (char= (lookahead-peek-chr lookahead 1) #\r)
-            (char= (lookahead-peek-chr lookahead 2) #\u)
-            (char= (lookahead-peek-chr lookahead 3) #\e)
-            "true"))
+       (let ((r1 (lookahead-peek-chr lookahead 1))
+             (u2 (lookahead-peek-chr lookahead 2))
+             (e3 (lookahead-peek-chr lookahead 3)))
+         (cond
+           ;; true (lowercase)
+           ((and (characterp r1) (char= r1 #\r)
+                 (characterp u2) (char= u2 #\u)
+                 (characterp e3) (char= e3 #\e))
+            "true")
+           ;; True (mixed case, first letter uppercase)
+           ((and (characterp r1) (char= r1 #\r)
+                 (characterp u2) (char= u2 #\u)
+                 (characterp e3) (char= e3 #\e))
+            "true")
+           (t nil))))
+      ((char= ch #\T)
+       (let ((r1 (lookahead-peek-chr lookahead 1))
+             (u2 (lookahead-peek-chr lookahead 2))
+             (e3 (lookahead-peek-chr lookahead 3)))
+         ;; True (mixed case) or TRUE (uppercase)
+         (cond
+           ;; True (mixed case: T r u e)
+           ((and (characterp r1) (char= r1 #\r)
+                 (characterp u2) (char= u2 #\u)
+                 (characterp e3) (char= e3 #\e))
+            "true")
+           ;; TRUE (uppercase: T R U E)
+           ((and (characterp r1) (char= r1 #\R)
+                 (characterp u2) (char= u2 #\U)
+                 (characterp e3) (char= e3 #\E))
+            "true")
+           (t nil))))
       ((char= ch #\f)
-       (and (char= (lookahead-peek-chr lookahead 1) #\a)
-            (char= (lookahead-peek-chr lookahead 2) #\l)
-            (char= (lookahead-peek-chr lookahead 3) #\s)
-            (char= (lookahead-peek-chr lookahead 4) #\e)
-            "false"))
+       (let ((a1 (lookahead-peek-chr lookahead 1))
+             (l2 (lookahead-peek-chr lookahead 2))
+             (s3 (lookahead-peek-chr lookahead 3))
+             (e4 (lookahead-peek-chr lookahead 4)))
+         ;; false (lowercase)
+         (when (and (characterp a1) (char= a1 #\a)
+                    (characterp l2) (char= l2 #\l)
+                    (characterp s3) (char= s3 #\s)
+                    (characterp e4) (char= e4 #\e))
+           "false")))
+      ((char= ch #\F)
+       (let ((a1 (lookahead-peek-chr lookahead 1))
+             (l2 (lookahead-peek-chr lookahead 2))
+             (s3 (lookahead-peek-chr lookahead 3))
+             (e4 (lookahead-peek-chr lookahead 4)))
+         ;; False (mixed case) or FALSE (uppercase)
+         (cond
+           ;; False (mixed case)
+           ((and (characterp a1) (char= a1 #\a)
+                 (characterp l2) (char= l2 #\l)
+                 (characterp s3) (char= s3 #\s)
+                 (characterp e4) (char= e4 #\e))
+            "false")
+           ;; FALSE (uppercase)
+           ((and (characterp a1) (char= a1 #\A)
+                 (characterp l2) (char= l2 #\L)
+                 (characterp s3) (char= s3 #\S)
+                 (characterp e4) (char= e4 #\E))
+            "false")
+           (t nil))))
       ((char= ch #\n)
-       (and (char= (lookahead-peek-chr lookahead 1) #\u)
-            (char= (lookahead-peek-chr lookahead 2) #\l)
-            (char= (lookahead-peek-chr lookahead 3) #\l)
-            "null"))
+       (let ((u1 (lookahead-peek-chr lookahead 1))
+             (l2 (lookahead-peek-chr lookahead 2))
+             (l3 (lookahead-peek-chr lookahead 3)))
+         ;; null (lowercase)
+         (when (and (characterp u1) (char= u1 #\u)
+                    (characterp l2) (char= l2 #\l)
+                    (characterp l3) (char= l3 #\l))
+           "null")))
+      ((char= ch #\N)
+       (let ((u1 (lookahead-peek-chr lookahead 1))
+             (l2 (lookahead-peek-chr lookahead 2))
+             (l3 (lookahead-peek-chr lookahead 3)))
+         ;; Null (mixed case) or NULL (uppercase)
+         (cond
+           ;; Null (mixed case)
+           ((and (characterp u1) (char= u1 #\u)
+                 (characterp l2) (char= l2 #\l)
+                 (characterp l3) (char= l3 #\l))
+            "null")
+           ;; NULL (uppercase)
+           ((and (characterp u1) (char= u1 #\U)
+                 (characterp l2) (char= l2 #\L)
+                 (characterp l3) (char= l3 #\L))
+            "null")
+           (t nil))))
       ((char= ch #\~)
-       "~")
+       ;; Check if it's followed by another ~
+       (let ((next-ch (lookahead-peek-chr lookahead 1)))
+         (if (and (characterp next-ch) (char= next-ch #\~))
+             nil  ;; ~~ is not null, it's a string
+             "~")))  ;; Single ~ is null
       (t
        nil))))
 
 (defun parse-bareword-string (lookahead)
   "Parse a bareword (plain scalar) string from LOOKAHEAD.
 Bareword strings are unquoted strings that don't match other scalar patterns.
-They can contain alphanumerics, dashes, and underscores."
+They can contain alphanumerics, dashes, and underscores.
+Stops at ':' which indicates a mapping separator in YAML."
   (let ((buffer (make-string-output-stream)))
     (loop
       (let ((ch (lookahead-peek-chr lookahead 0)))
         (cond
           ((eq ch +eof+)
            (return))
+          ((char= ch #\:)
+           ;; : indicates end of bareword (mapping separator)
+           (return))
           ((or (alpha-char-p ch)
                (digit-char-p ch)
                (char= ch #\-)
-               (char= ch #\_))
+               (char= ch #\_)
+               (char= ch #\~))
            (write-char (lookahead-read-chr lookahead) buffer))
           (t
            (return)))))
@@ -276,7 +409,10 @@ Detects and delegates to specific parsers."
       ((equal reserved-word "true") (parse-boolean lookahead))
       ((or (equal reserved-word "false") (equal reserved-word "null") (equal reserved-word "~"))
        (parse-null lookahead))
-      ((or (alpha-char-p ch) (char= ch #\_)) (parse-bareword-string lookahead))
+      ((or (alpha-char-p ch) (char= ch #\_) 
+           ;; ~ is allowed as start of bareword string when not a reserved word
+           (and (char= ch #\~) (null reserved-word)))
+       (parse-bareword-string lookahead))
       (t
        (error 'extraction-error
               :expected "valid scalar"

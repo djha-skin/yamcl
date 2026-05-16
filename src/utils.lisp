@@ -6,24 +6,28 @@
 
 (defpackage #:com.djhaskin.yamcl/utils
   (:use :cl)
-  (:export
-    #:+eof+
-    #:+null+
-    #:streamable
-    #:streamed
-    #:extraction-error
-    #:must-read-chr
-    #:peek-chr
-    #:read-chr
-    #:number-start-p
-    #:number-char-p
-    #:list-string
-    #:yaml-number-to-cl
-    #:lookahead-stream
-    #:new-lookahead-stream
-    #:unread-all
-    #:lookahead-read-chr
-    #:lookahead-peek-chr))
+  (:export 
+   #:+eof+
+   #:+null+
+   #:streamable
+   #:streamed
+   #:extraction-error
+   #:must-read-chr
+   #:peek-chr
+   #:read-chr
+   #:number-start-p
+   #:number-char-p
+   #:list-string
+   #:yaml-number-to-cl
+   #:lookahead-stream
+   #:make-lookahead-stream
+   #:lookahead-stream-strm
+   #:lookahead-stream-buffer-start
+   #:lookahead-stream-buffer
+   #:new-lookahead-stream
+   #:unread-all
+   #:lookahead-read-chr
+   #:lookahead-peek-chr))
 
 (in-package #:com.djhaskin.yamcl/utils)
 

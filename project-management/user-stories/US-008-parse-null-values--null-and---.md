@@ -1,31 +1,30 @@
 # US-008: Parse null values (null and ~)
 
 ## Description
-Parse null values using null keyword or ~ shorthand.
+Parse null values using null keyword or ~ shorthand according to YAML 1.2.2 Core Schema.
 
 ## YAML Examples
 ```yaml
 null: null
 tilde: ~
 empty: 
-null-in-array: [null, ~]
+null-in-array: [null, Null, NULL, ~]
 ```
 
 ## Test Cases
-1. **null → cl:null**
+1. **null → cl:null** (lowercase)
+1. **Null → cl:null** (mixed case)
+1. **NULL → cl:null** (uppercase)
 1. **~ → cl:null**
-1. **NULL → error**
 
 ## Dependencies
 - US-003: Skip Whitespace
 
 ## Implementation Notes
-- null and ~ both map to cl:null symbol
-- Case-sensitive: null not NULL
-- Empty value in mapping also represents null?
+- Case-insensitive per YAML 1.2.2 Core Schema: accepts null, Null, NULL, ~
+- All map to cl:null symbol
+- Empty value in mapping also represents null (different story)
 
 ## Edge Cases
-- NULL (uppercase)
-- Null (mixed case)
--  ~~ (double tilde)
-
+- ~~ (double tilde) - should parse as string "~~"
+- Edge cases from spec example: A null: null, Also a null: # Empty, Not a null: ""

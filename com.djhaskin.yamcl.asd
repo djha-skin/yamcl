@@ -11,7 +11,9 @@
                  (:file "main"
                   :depends-on ("utils"))
                  (:file "scalars"
-                  :depends-on ("main" "utils")))))
+                  :depends-on ("main" "utils"))
+                 (:file "blocks"
+                  :depends-on ("main" "utils" "scalars")))))
   :description
   "YAML Ain't Markup Language -- Common Lisp. A pure Common Lisp
 library for parsing and rendering YAML."
@@ -30,6 +32,7 @@ library for parsing and rendering YAML."
                 :components
                 ((:file "main")
                  (:file "scalars")
+                 (:file "blocks")
                  (:file "yaml-test-suite"))))
   :description "Test system for yamcl"
   :perform (asdf:test-op (op c)

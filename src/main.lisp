@@ -16,16 +16,24 @@
 ;;; Parsing (implemented in scalars.lisp)
 
 (defun parse-from (source)
-  "Parse a YAML scalar value from SOURCE.
+  "Parse a YAML value from SOURCE.
 SOURCE must be a stream.
 Returns the parsed value or +eof+ at end of input.
-Handles comments, whitespace, booleans, null, numbers, and strings."
-  (uiop:symbol-call :com.djhaskin.yamcl/scalars :parse-from source))
+Handles scalars (comments, whitespace, booleans, null, numbers, strings)
+and block collections (mappings, sequences)."
+  (let ((lookahead (uiop:symbol-call :com.djhaskin.yamcl/utils :new-lookahead-stream source :buffer-size 5)))
+    ;; First try to parse as mapping (US-015-C/D)
+    (let ((mapping (uiop:symbol-call :com.djhaskin.yamcl/blocks :parse-simple-mapping lookahead)))
+      (if mapping
+          mapping
+          ;; Fall back to scalar parsing
+          (uiop:symbol-call :com.djhaskin.yamcl/scalars :parse-from-lookahead lookahead)))))
 
 (defun parse-from-string (string)
-  "Parse a YAML scalar value from STRING.
+  "Parse a YAML value from STRING.
 Convenience wrapper around parse-from."
-  (uiop:symbol-call :com.djhaskin.yamcl/scalars :parse-from-string string))
+  (with-input-from-string (stream string)
+    (parse-from stream)))
 
 ;;; Generation
 

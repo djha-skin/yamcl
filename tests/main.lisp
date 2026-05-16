@@ -29,7 +29,10 @@
            :us-009-distinguish-null-vs-false
            :us-010-parse-double-quoted-strings
            :us-011-parse-single-quoted-strings
-           :us-012-parse-bareword-strings))
+           :us-012-parse-bareword-strings
+           :us-013-handle-escape-sequences-double-quoted
+           :us-014-handle-escape-sequences-single-quoted
+           :us-015-parse-simple-block-mappings))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -321,15 +324,27 @@
   (is eql nil (parse-from-string "false")
       "'false' should parse to nil")
   
-  ;; Test 3: TRUE → error (case-sensitive)
-  (test-parse-fails "TRUE"
-      "Uppercase TRUE should cause error (case-sensitive)")
+  ;; Test 3: TRUE → t (case-insensitive per YAML Core Schema)
+  (is eql t (parse-from-string "TRUE")
+      "Uppercase TRUE should parse to t (case-insensitive)")
   
-  ;; Test 4: False → error (case-sensitive)
-  (test-parse-fails "False"
-      "Mixed case False should cause error (case-sensitive)")
+  ;; Test 4: True → t (case-insensitive per YAML Core Schema)
+  (is eql t (parse-from-string "True")
+      "Mixed case True should parse to t (case-insensitive)")
   
-  ;; Test 5: Inside double quotes should be string, not boolean
+  ;; Test 5: False → nil (case-insensitive per YAML Core Schema)
+  (is eql nil (parse-from-string "False")
+      "Mixed case False should parse to nil (case-insensitive)")
+  
+  ;; Test 6: FALSE → nil (case-insensitive per YAML Core Schema)
+  (is eql nil (parse-from-string "FALSE")
+      "Uppercase FALSE should parse to nil (case-insensitive)")
+  
+  ;; Test 7: trUE should parse as string (weird casing, not a reserved word)
+  (is string= "trUE" (parse-from-string "trUE")
+      "'trUE' (weird casing) should parse as string, not boolean")
+  
+  ;; Test 8: Inside double quotes should be string, not boolean
   (skip "String vs boolean distinction - implement after US-010 is no longer skipped"))
 
 (define-test us-008-parse-null-values
@@ -343,19 +358,19 @@
   (is eq 'cl:null (parse-from-string "~")
       "Tilde should parse to cl:null symbol")
   
-  ;; Test 3: NULL → error (case-sensitive)
-  (test-parse-fails "NULL"
-      "Uppercase NULL should cause error (case-sensitive)")
+  ;; Test 3: NULL → cl:null (case-insensitive per YAML Core Schema)
+  (is eq 'cl:null (parse-from-string "NULL")
+      "Uppercase NULL should parse to cl:null (case-insensitive)")
   
-  ;; Test 4: Null → error (case-sensitive)
-  (test-parse-fails "Null"
-      "Mixed case Null should cause error (case-sensitive)")
+  ;; Test 4: Null → cl:null (case-insensitive per YAML Core Schema)
+  (is eq 'cl:null (parse-from-string "Null")
+      "Mixed case Null should parse to cl:null (case-insensitive)")
   
-  ;; Test 5: ~~ → error (double tilde)
-  (test-parse-fails "~~"
-      "Double tilde should cause error")
+  ;; Test 5: ~~ should parse as string (not null)
+  (is string= "~~" (parse-from-string "~~")
+      "Double tilde '~~' should parse as string, not null")
   
-  ;; Test 6: Empty value should be null? (YAML spec ambiguity)
+  ;; Test 6: Empty value handling
   (skip "Empty value handling - may be different story"))
 
 (define-test us-009-distinguish-null-vs-false
@@ -484,13 +499,14 @@
   (is eq 'cl:null (parse-from-string "~")
       "'~~' should parse as cl:null, not string")
   
-  ;; Test 8: Case variations of reserved words should be barewords
-  (is string= "True" (parse-from-string "True")
-      "'True' (capital T) should parse as string")
-  (is string= "FALSE" (parse-from-string "FALSE")
-      "'FALSE' (all caps) should parse as string")
-  (is string= "Null" (parse-from-string "Null")
-      "'Null' (capital N) should parse as string")
+  ;; Test 8: Case variations according to YAML Core Schema
+  ;; According to YAML 1.2.2 Core Schema, these are valid boolean/null values:
+  (is eql t (parse-from-string "True")
+      "'True' (mixed case) should parse as boolean t according to YAML Core Schema")
+  (is eql nil (parse-from-string "FALSE")
+      "'FALSE' (all caps) should parse as boolean nil according to YAML Core Schema")
+  (is eq 'cl:null (parse-from-string "Null")
+      "'Null' (mixed case) should parse as cl:null according to YAML Core Schema")
   
   ;; Test 9: Starts with number (edge case)
   ;; TODO: Decide if 123abc should be bareword or error
@@ -500,12 +516,153 @@
 (define-test us-013-handle-escape-sequences-double-quoted
   :parent phase-1-foundation
   "US-013: Handle Escape Sequences in Double-Quoted Strings"
-  (skip "Not implemented"))
+  ;; Test 1: \n → newline
+  (is string= (format nil "line1~%line2") (parse-from-string "\"line1\\nline2\"")
+      "\\n should parse to newline character")
+  
+  ;; Test 2: \t → tab
+  (is string= (format nil "tab~Cseparated" #\Tab) (parse-from-string "\"tab\\tseparated\"")
+      "\\t should parse to tab character")
+  
+  ;; Test 3: \" → "
+  (is string= "quote\"inside" (parse-from-string "\"quote\\\"inside\"")
+      "\\\" should parse to double quote character")
+  
+  ;; Test 4: \\ → \
+  (is string= "backslash\\here" (parse-from-string "\"backslash\\\\here\"")
+      "\\\\ should parse to backslash character")
+  
+  ;; Test 5: \/ → / (optional according to JSON RFC)
+  (is string= "path/name" (parse-from-string "\"path\\/name\"")
+      "\\/ should parse to forward slash character")
+  
+  ;; Test 6: \b → backspace
+  (is string= (format nil "back~Cspace" #\Backspace) (parse-from-string "\"back\\bspace\"")
+      "\\b should parse to backspace character")
+  
+  ;; Test 7: \f → form feed
+  (is string= (format nil "form~Cfeed" #\Page) (parse-from-string "\"form\\ffeed\"")
+      "\\f should parse to form feed character")
+  
+  ;; Test 8: \r → carriage return
+  (is string= (format nil "carriage~Creturn" #\Return) (parse-from-string "\"carriage\\rreturn\"")
+      "\\r should parse to carriage return character")
+  
+  ;; Test 9: Unicode escape \uXXXX
+  (is string= "€" (parse-from-string "\"\\u20AC\"")
+      "\\u20AC should parse to Euro sign")
+  
+  ;; Test 10: Invalid escape should error
+  (false (parse-succeeds-p "\"\\x\"")
+         "Invalid escape sequence \\x should cause error")
+  
+  ;; Test 11: Incomplete Unicode escape should error
+  (false (parse-succeeds-p "\"\\u20A\"")
+         "Incomplete Unicode escape should cause error")
+  
+  ;; Test 12: Unicode escape with lowercase hex should work
+  (is string= "€" (parse-from-string "\"\\u20ac\"")
+      "Lowercase hex in Unicode escape should parse")
+  
+  ;; Test 13: Multiple escape sequences in same string
+  (is string= (format nil "line~%with~Ctab~Cand quote\"end" #\Tab #\Backspace)
+      (parse-from-string "\"line\\nwith\\ttab\\band quote\\\"end\"")
+      "Multiple escape sequences should parse correctly"))
 
 (define-test us-014-handle-escape-sequences-single-quoted
   :parent phase-1-foundation
   "US-014: Handle Escape Sequences in Single-Quoted Strings"
-  (skip "Not implemented"))
+  ;; Test 1: Empty single-quoted string
+  (is string= "" (parse-from-string "''")
+      "Empty single-quoted string should parse to empty string")
+  
+  ;; Test 2: Simple single-quoted string
+  (is string= "simple" (parse-from-string "'simple'")
+      "'simple' should parse as string")
+  
+  ;; Test 3: Single quote escape: '' → '
+  (is string= "'" (parse-from-string "''''")
+      "'''' (two single quotes) should parse as single quote character")
+  
+  ;; Test 4: Escaped single quote in string
+  (is string= "it's quoted" (parse-from-string "'it''s quoted'")
+      "'' should escape to ' in single-quoted strings")
+  
+  ;; Test 5: Multiple escaped single quotes
+  (is string= "can't stop won't stop" (parse-from-string "'can''t stop won''t stop'")
+      "Multiple '' escapes should work")
+  
+  ;; Test 6: Backslash-n remains literal
+  (is string= "\\n" (parse-from-string "'\\n'")
+      "\\n should remain as literal backslash-n in single-quoted strings")
+  
+  ;; Test 7: Backslash-t remains literal
+  (is string= "\\t" (parse-from-string "'\\t'")
+      "\\t should remain as literal backslash-t in single-quoted strings")
+  
+  ;; Test 8: Other escape sequences remain literal
+  (is string= "\\r\\f\\b\\\"" (parse-from-string "'\\r\\f\\b\\\"'")
+      "Other escape sequences should remain literal in single-quoted strings")
+  
+  ;; Test 9: Unicode escape remains literal
+  (is string= "\\u20AC" (parse-from-string "'\\u20AC'")
+      "Unicode escapes should remain literal in single-quoted strings")
+  
+  ;; Test 10: Mixed content with escapes
+  (is string= "it's a test\\nwith multiple\\tcharacters" (parse-from-string "'it''s a test\\nwith multiple\\tcharacters'")
+      "Mixed content with '' escapes and literal backslashes should parse correctly"))
+
+;;; Phase 2: Block Collections Tests
+
+(define-test phase-2-block-collections
+  :parent yamcl-tests
+  "Phase 2: Block-style mappings and sequences"
+  (skip "Phase not started"))
+
+(define-test us-015-parse-simple-block-mappings
+  :parent phase-2-block-collections
+  "US-015: Parse simple block mappings"
+  
+  ;; Basic key-value pair
+  (let ((result (parse-from-string "key: value")))
+    (is equal "value" (gethash "key" result)
+        "key: value should parse to hash table with key 'key' and value 'value'")
+    (is typep result 'hash-table
+        "Should return a hash table"))
+  
+  ;; Multiple key-value pairs  
+  (let ((result (parse-from-string "name: John
+age: 30
+city: Boston")))
+    (is equal "John" (gethash "name" result) "name should be John")
+    (is equal 30 (gethash "age" result) "age should be 30")
+    (is equal "Boston" (gethash "city" result) "city should be Boston"))
+  
+  ;; Different scalar types as values
+  (let ((result (parse-from-string "boolean: true
+null: null
+number: 42
+string: hello")))
+    (is true (gethash "boolean" result) "boolean should be true")
+    (is cl:null (gethash "null" result) "null should be cl:null")
+    (is = 42 (gethash "number" result) "number should be 42")
+    (is string= "hello" (gethash "string" result) "string should be 'hello'"))
+  
+  ;; Test with quotes
+  (let ((result (parse-from-string "'quoted key': \"quoted value\"")))
+    (is string= "quoted value" (gethash "quoted key" result)
+        "Quoted key and value should parse correctly"))
+  
+  ;; Error case: missing space after colon (should fail according to YAML spec)
+  (false (parse-succeeds-p "key:value")
+         "key:value (no space) should fail to parse")
+  
+  ;; Empty value
+  (let ((result (parse-from-string "key:")))
+    (is cl:null (gethash "key" result)
+        "key: (empty value) should parse to null")
+    (is typep result 'hash-table
+        "Should still return a hash table with null value")))
 
 ;;; Phase 2: Block Collections Tests
 
@@ -541,6 +698,12 @@
         (parse-from-string yaml-string)
         (fail test-name))
     (extraction-error () t)))
+
+(defun parse-succeeds-p (yaml-string)
+  "Return T if parsing YAML-STRING succeeds, NIL if it fails with extraction-error."
+  (handler-case
+      (progn (parse-from-string yaml-string) t)
+    (extraction-error () nil)))
 
 (defun test-roundtrip (value &optional (test-name "roundtrip"))
   "Test that VALUE can be serialized and deserialized."
