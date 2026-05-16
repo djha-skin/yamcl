@@ -186,28 +186,97 @@ Returns keywords for special float values: :positive-infinity, :negative-infinit
                (read-from-string converted))))))))
 
 (defun parse-string (lookahead)
-  "Parse a double-quoted string from LOOKAHEAD."
-  (lookahead-read-chr lookahead) ;; consume opening quote
+  "Parse a quoted string from LOOKAHEAD.
+Handles both single-quoted (') and double-quoted (\") strings."
+  (let ((quote-char (lookahead-read-chr lookahead))) ;; consume opening quote
+    (let ((buffer (make-string-output-stream))
+          (is-single-quote (char= quote-char #\')))
+      (loop
+        (let ((ch (lookahead-peek-chr lookahead 0)))
+          (cond
+            ((eq ch +eof+)
+             (error 'extraction-error :expected (format nil "closing ~A" quote-char) :got +eof+))
+            ((char= ch quote-char)
+             ;; Might be closing quote or escaped quote (for single quotes)
+             (if (and is-single-quote
+                      (let ((next-ch (lookahead-peek-chr lookahead 1)))
+                        (and (characterp next-ch) (char= next-ch #\'))))
+                 ;; It's an escaped quote: '' -> '
+                 (progn
+                   (lookahead-read-chr lookahead) ;; consume first '
+                   (lookahead-read-chr lookahead) ;; consume second '
+                   (write-char #\' buffer))
+                 ;; It's the closing quote
+                 (return)))
+            (t
+             ;; Normal character
+             (write-char (lookahead-read-chr lookahead) buffer)))))
+      (lookahead-read-chr lookahead) ;; consume closing quote
+      (get-output-stream-string buffer))))
+
+(defun starts-with-reserved-word-p (lookahead)
+  "Check if the stream starts with a reserved word (true, false, null, ~).
+Returns the word if it's a reserved word, NIL otherwise."
+  (let ((ch (lookahead-peek-chr lookahead 0)))
+    (cond
+      ((char= ch #\t)
+       (and (char= (lookahead-peek-chr lookahead 1) #\r)
+            (char= (lookahead-peek-chr lookahead 2) #\u)
+            (char= (lookahead-peek-chr lookahead 3) #\e)
+            "true"))
+      ((char= ch #\f)
+       (and (char= (lookahead-peek-chr lookahead 1) #\a)
+            (char= (lookahead-peek-chr lookahead 2) #\l)
+            (char= (lookahead-peek-chr lookahead 3) #\s)
+            (char= (lookahead-peek-chr lookahead 4) #\e)
+            "false"))
+      ((char= ch #\n)
+       (and (char= (lookahead-peek-chr lookahead 1) #\u)
+            (char= (lookahead-peek-chr lookahead 2) #\l)
+            (char= (lookahead-peek-chr lookahead 3) #\l)
+            "null"))
+      ((char= ch #\~)
+       "~")
+      (t
+       nil))))
+
+(defun parse-bareword-string (lookahead)
+  "Parse a bareword (plain scalar) string from LOOKAHEAD.
+Bareword strings are unquoted strings that don't match other scalar patterns.
+They can contain alphanumerics, dashes, and underscores."
   (let ((buffer (make-string-output-stream)))
-    (loop for ch = (lookahead-peek-chr lookahead 0)
-          while (and (characterp ch)
-                     (not (char= ch #\")))
-          do (write-char (lookahead-read-chr lookahead) buffer))
-    (lookahead-read-chr lookahead) ;; consume closing quote
-    (get-output-stream-string buffer)))
+    (loop
+      (let ((ch (lookahead-peek-chr lookahead 0)))
+        (cond
+          ((eq ch +eof+)
+           (return))
+          ((or (alpha-char-p ch)
+               (digit-char-p ch)
+               (char= ch #\-)
+               (char= ch #\_))
+           (write-char (lookahead-read-chr lookahead) buffer))
+          (t
+           (return)))))
+    (let ((result (get-output-stream-string buffer)))
+      (if (string= result "")
+          (error 'extraction-error :expected "bareword string" :got (lookahead-peek-chr lookahead 0))
+          result))))
 
 (defun parse-scalar-lookahead (lookahead)
   "Parse a scalar value from LOOKAHEAD.
 Detects and delegates to specific parsers."
   (skip-whitespace-and-comments-lookahead lookahead)
-  (let ((ch (lookahead-peek-chr lookahead 0)))
+  (let ((ch (lookahead-peek-chr lookahead 0))
+        (reserved-word (starts-with-reserved-word-p lookahead)))
     (cond
       ((eq ch +eof+) +eof+)
-      ((char= ch #\") (parse-string lookahead))
+      ((or (char= ch #\") (char= ch #\')) (parse-string lookahead))
       ((digit-char-p ch) (parse-number lookahead))
       ((or (char= ch #\-) (char= ch #\+) (char= ch #\.)) (parse-number lookahead))
-      ((char= ch #\t) (parse-boolean lookahead))
-      ((or (char= ch #\f) (char= ch #\n) (char= ch #\~)) (parse-null lookahead))
+      ((equal reserved-word "true") (parse-boolean lookahead))
+      ((or (equal reserved-word "false") (equal reserved-word "null") (equal reserved-word "~"))
+       (parse-null lookahead))
+      ((or (alpha-char-p ch) (char= ch #\_)) (parse-bareword-string lookahead))
       (t
        (error 'extraction-error
               :expected "valid scalar"
@@ -218,13 +287,25 @@ Detects and delegates to specific parsers."
 SOURCE must be a stream.
 Returns the parsed value or +eof+ at end of input."
   ;; Create a lookahead-stream wrapper with buffer size 4
-  ;; (enough to check for --- and ... document markers)
-  (let ((lookahead (new-lookahead-stream source :buffer-size 4)))
+  ;; (enough to check for --- and ... document markers)  
+  (let ((lookahead (new-lookahead-stream source :buffer-size 5)))
     ;; Call the internal parse function that works with lookahead-stream
-    (prog1
-        (parse-from-lookahead lookahead)
+    (let ((result (parse-from-lookahead lookahead)))
+      ;; After parsing, skip any trailing whitespace and comments
+      (skip-whitespace-and-comments-lookahead lookahead)
+      ;; If we got a scalar (not EOF), check for invalid trailing content
+      ;; Allow document markers (--- and ...) after scalars
+      (unless (eq result +eof+)
+        (let ((next-ch (lookahead-peek-chr lookahead 0)))
+          (unless (or (eq next-ch +eof+)
+                      (char= next-ch #\-)  ; possible document start
+                      (char= next-ch #\.)) ; possible document end
+            (error 'extraction-error
+                   :expected "end of input or document marker"
+                   :got next-ch))))
       ;; Unread any buffered characters back to the stream
-      (unread-all lookahead))))
+      (unread-all lookahead)
+      result)))
 
 (defun parse-from-lookahead (lookahead)
   "Parse a YAML scalar value from LOOKAHEAD (a lookahead-stream).
