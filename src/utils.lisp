@@ -6,28 +6,24 @@
 
 (defpackage #:com.djhaskin.yamcl/utils
   (:use :cl)
-  (:export 
+  (:export
    #:+eof+
    #:+null+
-   #:streamable
-   #:streamed
    #:extraction-error
+   #:list-string
+   #:lookahead-peek-chr
+   #:lookahead-read-chr
+   #:lookahead-stream
    #:must-read-chr
+   #:new-lookahead-stream
+   #:number-char-p
+   #:number-start-p
    #:peek-chr
    #:read-chr
-   #:number-start-p
-   #:number-char-p
-   #:list-string
-   #:yaml-number-to-cl
-   #:lookahead-stream
-   #:make-lookahead-stream
-   #:lookahead-stream-strm
-   #:lookahead-stream-buffer-start
-   #:lookahead-stream-buffer
-   #:new-lookahead-stream
+   #:streamable
+   #:streamed
    #:unread-all
-   #:lookahead-read-chr
-   #:lookahead-peek-chr))
+   #:yaml-number-to-cl))
 
 (in-package #:com.djhaskin.yamcl/utils)
 
@@ -168,7 +164,7 @@ Handles:
     (cond
       ;; Special float values - use SBCL-specific values if available
       ((string= clean ".inf") "1.0e1000") ; Positive infinity
-      ((string= clean "-.inf") "-1.0e1000") ; Negative infinity  
+      ((string= clean "-.inf") "-1.0e1000") ; Negative infinity
       ((string= clean ".nan") "0.0d+NaN") ; NaN
       ;; Check for base indicators
       ((and (> (length clean) 2)

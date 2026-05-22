@@ -1,7 +1,8 @@
 ;;;; src/main.lisp
 ;;;; yamcl - YAML Ain't Markup Language -- Common Lisp
 
-(cl:defpackage :com.djhaskin.yamcl
+(defpackage
+  #:com.djhaskin.yamcl
   (:use :cl)
   (:export
    ;; Parsing
@@ -9,7 +10,14 @@
    :parse-from-string
    ;; Generation
    :generate-to
-   :generate-to-string))
+   :generate-to-string)
+  (:local-nicknames
+   ;; Utils
+   (:utils #:com.djhaskin.yamcl.utils)
+   ;; Scalars
+   (:scalars #:com.djhaskin.yamcl.scalars)
+   ;; Blocks
+   (:blocks #:com.djhaskin.yamcl.blocks)))
 
 (cl:in-package :com.djhaskin.yamcl)
 
@@ -21,13 +29,13 @@ SOURCE must be a stream.
 Returns the parsed value or +eof+ at end of input.
 Handles scalars (comments, whitespace, booleans, null, numbers, strings)
 and block collections (mappings, sequences)."
-  (let ((lookahead (uiop:symbol-call :com.djhaskin.yamcl/utils :new-lookahead-stream source :buffer-size 5)))
+  (let ((lookahead (utils:new-lookahead-stream source :buffer-size 5)))
     ;; First try to parse as mapping (US-015-C/D)
-    (let ((mapping (uiop:symbol-call :com.djhaskin.yamcl/blocks :parse-simple-mapping lookahead)))
+    (let ((mapping (blocks:parse-simple-mapping lookahead)))
       (if mapping
           mapping
           ;; Fall back to scalar parsing
-          (uiop:symbol-call :com.djhaskin.yamcl/scalars :parse-from-lookahead lookahead)))))
+          (scalars:parse-from-lookahead lookahead)))))
 
 (defun parse-from-string (string)
   "Parse a YAML value from STRING.
