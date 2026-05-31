@@ -44,7 +44,8 @@
            :us-024-parse-empty-collections
            :us-025-parse-literal-block-scalars
            :us-026-parse-folded-block-scalars
-           :us-027-handle-chomping-modes))
+           :us-027-handle-chomping-modes
+           :us-028-handle-indentation-indicators))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -1528,6 +1529,71 @@ string: hello")))
         (format nil "val~%")
         (gethash "key" result)
         "|+ as mapping value keeps trailing")))
+
+(define-test us-028-handle-indentation-indicators
+  ;; Test 1: Literal with explicit indent 2
+  (let ((result (parse-from-string
+                  (format nil "|2~%  content"))))
+    (is equal "content" result
+        "|2 with 2-space indent strips correctly"))
+  ;; Test 2: Literal with explicit indent 4
+  (let ((result (parse-from-string
+                  (format nil "|4~%    content"))))
+    (is equal "content" result
+        "|4 with 4-space indent strips correctly"))
+  ;; Test 3: Literal with extra indentation preserved
+  (let ((result (parse-from-string
+                  (format nil "|2~%    content"))))
+    (is equal "  content" result
+        "|2 preserves extra indentation beyond 2"))
+  ;; Test 4: Folded with explicit indent 1
+  (let ((result (parse-from-string
+                  (format nil ">1~% content~% more"))))
+    (is equal "content more" result
+        ">1 folds with 1-space indent"))
+  ;; Test 5: Folded with explicit indent 3
+  (let ((result (parse-from-string
+                  (format nil ">3~%   folded~%   lines"))))
+    (is equal "folded lines" result
+        ">3 folds with 3-space indent"))
+  ;; Test 6: No digit still auto-detects
+  (let ((result (parse-from-string
+                  (format nil "|~%  content"))))
+    (is equal "content" result
+        "| without digit auto-detects indent"))
+  ;; Test 7: Explicit indent as mapping value
+  (let ((result (parse-from-string
+                  (format nil "key: |2~%  val"))))
+    (is equal "val"
+        (gethash "key" result)
+        "|2 as mapping value strips correctly"))
+  ;; Test 8: Explicit indent with strip mode
+  (let ((result (parse-from-string
+                  (format nil "|-2~%  content"))))
+    (is equal "content" result
+        "|-2 strips trailing with explicit indent"))
+  ;; Test 9: Explicit indent with keep mode
+  (let ((result (parse-from-string
+                  (format nil "|+2~%  content"))))
+    (is equal "content" result
+        "|+2 no trailing newline returns content"))
+  ;; Test 9b: Keep mode with trailing newline
+  (let ((result (parse-from-string
+                  (format nil "|+2~%  content~%"))))
+    (is equal
+        (format nil "content~%") result
+        "|+2 keeps trailing newline"))
+  ;; Test 10: Multi-line literal with explicit indent
+  (let ((result (parse-from-string
+                  (format nil "|2~%  line1~%  line2"))))
+    (is equal
+        (format nil "line1~%line2") result
+        "|2 multi-line strips common indent"))
+  ;; Test 11: Explicit indent 0 (no stripping)
+  (let ((result (parse-from-string
+                  (format nil "|0~%content"))))
+    (is equal "content" result
+        "|0 strips zero spaces")))
 
 ;;; Phase 3: Advanced Features Tests
 

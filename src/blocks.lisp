@@ -344,10 +344,12 @@ collections, and comments."
 
 (defun parse-block-header (lookahead)
   "Parse block scalar header after the indicator (| or >).
-Returns chomping mode as keyword: :strip, :clip, or :keep.
+Returns two values: chomping mode (:strip, :clip, :keep)
+and the explicit indentation indicator (integer or NIL).
 Also consumes indentation indicator digit if present.
 Consumes rest of line (comments etc)."
-  (let ((chomping :clip))
+  (let ((chomping :clip)
+        (indent-indicator nil))
     (let ((ch (lookahead-peek-chr lookahead 0)))
       (cond
         ((and (characterp ch) (char= ch #\-))
@@ -359,6 +361,8 @@ Consumes rest of line (comments etc)."
     (let ((ch (lookahead-peek-chr lookahead 0)))
       (when (and (characterp ch)
                  (digit-char-p ch))
+        (setf indent-indicator
+              (digit-char-p ch))
         (lookahead-read-chr lookahead)))
     (loop for ch = (lookahead-peek-chr lookahead 0)
           while (and (characterp ch)
@@ -377,7 +381,7 @@ Consumes rest of line (comments etc)."
                      (and (characterp n)
                           (char= n #\Newline))))
           (lookahead-read-chr lookahead))))
-    chomping))
+    (values chomping indent-indicator)))
 
 (defun apply-chomping (text mode trailing-count)
   "Apply chomping MODE to TEXT.
@@ -409,9 +413,10 @@ in the original input that were consumed."
   "Parse a YAML literal block scalar from LOOKAHEAD.
 The pipe character has NOT been consumed yet."
   (lookahead-read-chr lookahead) ;; consume |
-  (let ((mode (parse-block-header lookahead)))
+  (multiple-value-bind (mode indent-indicator)
+      (parse-block-header lookahead)
     (let ((raw-lines nil)
-          (block-indent nil)
+          (block-indent (or indent-indicator nil))
           (had-trailing-newline nil))
       (loop
         (let ((indent 0))
@@ -512,9 +517,10 @@ The pipe character has NOT been consumed yet."
   "Parse a YAML folded block scalar from LOOKAHEAD.
 The > character has NOT been consumed yet."
   (lookahead-read-chr lookahead) ;; consume >
-  (let ((mode (parse-block-header lookahead)))
+  (multiple-value-bind (mode indent-indicator)
+      (parse-block-header lookahead)
     (let ((raw-lines nil)
-          (block-indent nil)
+          (block-indent (or indent-indicator nil))
           (had-trailing-newline nil))
       (loop
         (let ((indent 0))
