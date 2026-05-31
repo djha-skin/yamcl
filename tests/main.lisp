@@ -40,7 +40,8 @@
            :us-020-handle-indentation-in-block-collections
            :us-021-parse-flow-sequences
            :us-022-parse-flow-mappings
-           :us-023-parse-nested-flow-collections))
+           :us-023-parse-nested-flow-collections
+           :us-024-parse-empty-collections))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -1225,6 +1226,83 @@ string: hello")))
     (is equal '("x" "y") (third result)
         "sequence item")
     (is eq t (fourth result) "boolean item")))
+
+(define-test us-024-parse-empty-collections
+  :parent phase-2-block-collections
+  "US-024: Parse empty collections"
+
+  ;; Test 1: Empty flow sequence
+  (let ((result (parse-from-string "[]")))
+    (is equal nil result
+        "[] should parse to nil"))
+
+  ;; Test 2: Empty flow mapping
+  (let ((result (parse-from-string "{}")))
+    (is typep 'hash-table result
+        "{} should parse to hash table")
+    (is = 0 (hash-table-count result)
+        "Empty {} should have 0 entries"))
+
+  ;; Test 3: Flow sequence with whitespace
+  (let ((result (parse-from-string "[ ]")))
+    (is equal nil result
+        "[ ] should parse to nil"))
+
+  ;; Test 4: Flow mapping with whitespace
+  (let ((result (parse-from-string "{ }")))
+    (is typep 'hash-table result
+        "{ } should parse to hash table")
+    (is = 0 (hash-table-count result)
+        "Empty { } should have 0 entries"))
+
+  ;; Test 5: Mapping with empty sequence value
+  (let ((result (parse-from-string "a: [  ]")))
+    (is equal nil (gethash "a" result)
+        "Mapping with empty sequence value"))
+
+  ;; Test 6: Mapping with empty mapping value
+  (let ((result (parse-from-string "a: {  }")))
+    (is typep 'hash-table (gethash "a" result)
+        "Mapping with empty mapping value")
+    (is = 0 (hash-table-count (gethash "a" result))
+        "Inner mapping should be empty"))
+
+  ;; Test 7: Block mapping with empty value (key: on its own)
+  (let ((result (parse-from-string (format nil "key:~%"))))
+    (is eq 'cl:null (gethash "key" result)
+        "key: with newline should give null"))
+
+  ;; Test 8: Two mappings both with empty values
+  (let ((result (parse-from-string
+                  (format nil "a:~%b:~%"))))
+    (is eq 'cl:null (gethash "a" result)
+        "First key should be null")
+    (is eq 'cl:null (gethash "b" result)
+        "Second key should be null"))
+
+  ;; Test 9: Mapping key with inline empty list
+  (let ((result (parse-from-string "items: []")))
+    (is equal nil (gethash "items" result)
+        "items: [] should have nil value"))
+
+  ;; Test 10: Mapping key with inline empty map
+  (let ((result (parse-from-string "data: {}")))
+    (is typep 'hash-table (gethash "data" result)
+        "data: {} should have hash value")
+    (is = 0 (hash-table-count (gethash "data" result))
+        "Inner map should be empty"))
+
+  ;; Test 11: Empty sequence as first value in document
+  (let ((result (parse-from-string "--- []")))
+    (is equal nil result
+        "Document start then empty list"))
+
+  ;; Test 12: Empty mapping as first value in document
+  (let ((result (parse-from-string "--- {}")))
+    (is typep 'hash-table result
+        "Document start then empty map")
+    (is = 0 (hash-table-count result)
+        "Empty map from doc start")))
 
 ;;; Phase 3: Advanced Features Tests
 

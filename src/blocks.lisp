@@ -51,6 +51,12 @@
                  (char= next #\Newline) (char= next #\Return))
              +null+
              (parse-scalar-lookahead lookahead))))
+      ;; Flow sequence value
+      ((char= ch #\[)
+       (parse-flow-sequence lookahead))
+      ;; Flow mapping value
+      ((char= ch #\{)
+       (parse-flow-mapping lookahead))
       (t
        (parse-scalar-lookahead lookahead)))))
 
