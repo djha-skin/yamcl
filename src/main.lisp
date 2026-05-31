@@ -70,6 +70,9 @@
       ;; Literal block scalar (|)
       ((char= ch #\|)
        (blocks:parse-literal-block-scalar lookahead))
+      ;; Folded block scalar (>)
+      ((char= ch #\>)
+       (blocks:parse-folded-block-scalar lookahead))
       ;; Scalar-first: read the scalar, then check for mapping
       (t
        (let ((scalar (scalars:parse-scalar-lookahead lookahead)))

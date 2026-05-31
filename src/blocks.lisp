@@ -15,6 +15,7 @@
    #:parse-flow-sequence
    #:parse-flow-mapping
    #:parse-literal-block-scalar
+   #:parse-folded-block-scalar
    #:scalar-to-key-string))
 
 (in-package #:com.djhaskin.yamcl/blocks)
@@ -61,6 +62,9 @@
       ;; Literal block scalar value
       ((char= ch #\|)
        (parse-literal-block-scalar lookahead))
+      ;; Folded block scalar value
+      ((char= ch #\>)
+       (parse-folded-block-scalar lookahead))
       (t
        (parse-scalar-lookahead lookahead)))))
 
@@ -459,3 +463,175 @@ common indentation, and returns the content as a string."
       (return-from parse-literal-block-scalar ""))
     (format nil "~{~A~^~%~}"
             (reverse raw-lines))))
+
+(defun parse-folded-block-scalar (lookahead)
+  "Parse a YAML folded block scalar from LOOKAHEAD.
+The > character has NOT been consumed yet.
+Reads the >, then subsequent indented lines, folds
+single newlines into spaces while preserving blank
+lines as newlines. Uses clip chomping by default."
+  (lookahead-read-chr lookahead) ;; consume >
+  ;; Skip rest of line (block header / trailing content)
+  (loop for ch = (lookahead-peek-chr lookahead 0)
+        while (and (characterp ch)
+                   (not (char= ch #\Newline))
+                   (not (char= ch #\Return))
+                   (not (eq ch +eof+)))
+        do (lookahead-read-chr lookahead))
+  ;; Consume newline after >
+  (let ((ch (lookahead-peek-chr lookahead 0)))
+    (when (and (characterp ch)
+               (or (char= ch #\Newline)
+                   (char= ch #\Return)))
+      (lookahead-read-chr lookahead)
+      (when (and (char= ch #\Return)
+                 (let ((n (lookahead-peek-chr
+                            lookahead 0)))
+                   (and (characterp n)
+                        (char= n #\Newline))))
+        (lookahead-read-chr lookahead))))
+  ;; Collect all raw lines until end of scalar.
+  (let ((raw-lines nil)
+        (block-indent nil)
+        (had-trailing-newline nil))
+    (loop
+      (let ((indent 0))
+        (loop for offset from 0
+              while (and (< offset 16)
+                         (let ((ch
+                                 (lookahead-peek-chr
+                                   lookahead offset)))
+                           (and (characterp ch)
+                                (char= ch #\Space))))
+              do (incf indent))
+        (let ((ch (lookahead-peek-chr
+                    lookahead indent)))
+          (cond
+            ;; End of input
+            ((eq ch +eof+)
+             (return))
+            ;; Empty line (just newline or spaces+newline)
+            ((and (characterp ch)
+                  (or (char= ch #\Newline)
+                      (char= ch #\Return)))
+             (when block-indent
+               (push "" raw-lines))
+             (setf had-trailing-newline t)
+             ;; Consume leading spaces first
+             (loop repeat indent
+                   do (lookahead-read-chr lookahead))
+             (lookahead-read-chr lookahead)
+             (when (and (characterp ch)
+                        (char= ch #\Return)
+                        (let ((n (lookahead-peek-chr
+                                   lookahead 0)))
+                          (and (characterp n)
+                               (char= n #\Newline))))
+               (lookahead-read-chr lookahead)))
+            ;; Non-empty content line
+            (t
+             (when (null block-indent)
+               (setf block-indent indent))
+             (when (< indent block-indent)
+               (setf had-trailing-newline nil)
+               (return))
+             (loop repeat block-indent
+                   do (lookahead-read-chr lookahead))
+             (let ((chars nil))
+               (loop for ch2 =
+                       (lookahead-peek-chr
+                         lookahead 0)
+                     while (and (characterp ch2)
+                                (not (char=
+                                        ch2
+                                        #\Newline))
+                                (not (char=
+                                        ch2
+                                        #\Return))
+                                (not (eq ch2
+                                         +eof+)))
+                     do (lookahead-read-chr
+                          lookahead)
+                        (push ch2 chars))
+               (push (coerce (reverse chars)
+                             'string)
+                     raw-lines))
+             (let ((ch2 (lookahead-peek-chr
+                           lookahead 0)))
+               (cond
+                 ((eq ch2 +eof+)
+                  (setf had-trailing-newline nil)
+                  (return))
+                 ((or (char= ch2 #\Newline)
+                      (char= ch2 #\Return))
+                  (setf had-trailing-newline t)
+                  (lookahead-read-chr lookahead)
+                  (when (and (char= ch2 #\Return)
+                             (let ((n
+                                     (lookahead-peek-chr
+                                       lookahead
+                                       0)))
+                               (and (characterp n)
+                                    (char= n
+                                           #\Newline))))
+                    (lookahead-read-chr lookahead)))
+                 (t
+                  (setf had-trailing-newline nil)
+                  (return)))))))))
+    ;; If block-indent was never found, scalar is empty
+    (unless block-indent
+      (return-from parse-folded-block-scalar ""))
+    (let ((lines (reverse raw-lines)))
+      ;; Join lines with newlines, then fold per
+      ;; YAML 1.2.2 section 8.2.1: a newline is
+      ;; folded to a space only when both the
+      ;; preceding and following lines are non-empty.
+      (let ((raw-text
+              (if lines
+                  (apply #'concatenate 'string
+                    (loop for (line . rest) on lines
+                          collect line
+                          when rest
+                            collect (string
+                                      #\Newline)))
+                  "")))
+        (let ((len (length raw-text))
+              (result
+                (make-array 0
+                  :element-type 'character
+                  :adjustable t
+                  :fill-pointer 0)))
+          (loop for i from 0 below len
+                do (let ((ch (char raw-text i)))
+                     (if (and
+                           (char= ch #\Newline)
+                           (or (zerop i)
+                               (char/=
+                                 (char raw-text
+                                       (1- i))
+                                 #\Newline))
+                           (let ((j (1+ i)))
+                             (and (< j len)
+                                  (char/=
+                                    (char raw-text j)
+                                    #\Newline))))
+                         (vector-push-extend
+                           #\Space result)
+                         (vector-push-extend
+                           ch result))))
+          (let ((folded
+                  (coerce result 'string)))
+            ;; Clip chomping: strip trailing newlines,
+            ;; add exactly one if had-trailing-newline
+            (let ((end (length folded)))
+              (loop while
+                    (and (> end 0)
+                         (char=
+                           (char folded (1- end))
+                           #\Newline))
+                    do (decf end))
+              (if had-trailing-newline
+                  (concatenate 'string
+                    (subseq folded 0 end)
+                    (string #\Newline))
+                  (subseq folded 0 end)))))))))

@@ -42,7 +42,8 @@
            :us-022-parse-flow-mappings
            :us-023-parse-nested-flow-collections
            :us-024-parse-empty-collections
-           :us-025-parse-literal-block-scalars))
+           :us-025-parse-literal-block-scalars
+           :us-026-parse-folded-block-scalars))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -1367,6 +1368,81 @@ string: hello")))
   (let ((result (parse-from-string "|")))
     (is equal "" result
         "Single pipe with no content")))
+
+(define-test us-026-parse-folded-block-scalars
+  ;; Test 1: Basic folding - single newlines become spaces
+  (let ((result (parse-from-string
+                  (format nil ">~%  folded~%  lines~%  here"))))
+    (is equal "folded lines here" result
+        "Single newlines become spaces"))
+  ;; Test 2: Blank lines preserved as newlines
+  (let ((result (parse-from-string
+                  (format nil ">~%  line1~%~%  line2"))))
+    (is equal
+        (format nil "line1~%~%line2") result
+        "Blank lines preserved as newlines"))
+  ;; Test 3: Empty folded block
+  (let ((result (parse-from-string
+                  (format nil ">~%"))))
+    (is equal "" result
+        "Empty folded block returns empty string"))
+  ;; Test 4: Single line - no folding needed
+  (let ((result (parse-from-string
+                  (format nil ">~%  hello"))))
+    (is equal "hello" result
+        "Single line returns content as-is"))
+  ;; Test 5: Multiple paragraphs
+  (let ((result (parse-from-string
+                  (format nil ">~%  para1~%  line2~%~%  para2"))))
+    (is equal
+        (format nil "para1 line2~%~%para2") result
+        "Multiple paragraphs fold correctly"))
+  ;; Test 6: Indentation stripping
+  (let ((result (parse-from-string
+                  (format nil ">~%    line1~%    line2"))))
+    (is equal "line1 line2" result
+        "Common indentation is stripped"))
+  ;; Test 7: As mapping value
+  (let ((result (parse-from-string
+                  (format nil "key: >~%  value1~%  value2"))))
+    (is equal "value1 value2"
+        (gethash "key" result)
+        "Folded scalar as mapping value"))
+  ;; Test 8: Multiple blank lines
+  (let ((result (parse-from-string
+                  (format nil ">~%  line1~%~%~%  line2"))))
+    (is equal
+        (format nil "line1~%~%~%line2") result
+        "Multiple blank lines preserved"))
+  ;; Test 9: Trailing blank line adds trailing newline
+  (let ((result (parse-from-string
+                  (format nil ">~%  line1~%"))))
+    (is equal
+        (format nil "line1~%") result
+        "Trailing blank line adds newline"))
+  ;; Test 10: Mixed content
+  (let ((result (parse-from-string
+                  (format nil ">~%  first~%  second~%~%  third~%  fourth"))))
+    (is equal
+        (format nil "first second~%~%third fourth")
+        result
+        "Mixed content folds correctly"))
+  ;; Test 11: Bare > with no following newline
+  (let ((result (parse-from-string ">")))
+    (is equal "" result
+        "Bare > with no content returns empty"))
+  ;; Test 12: Indented blank lines preserved
+  (let ((result (parse-from-string
+                  (format nil ">~%  line1~%   ~%  line2"))))
+    (is equal
+        (format nil "line1~%~%line2") result
+        "Indented blank line treated as blank"))
+  ;; Test 13: Mapping with folded value
+  (let ((result (parse-from-string
+                  (format nil "text: >~%  This is~%  folded text"))))
+    (is equal "This is folded text"
+        (gethash "text" result)
+        "Mapping with folded scalar value")))
 
 ;;; Phase 3: Advanced Features Tests
 
