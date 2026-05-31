@@ -32,7 +32,9 @@
            :us-012-parse-bareword-strings
            :us-013-handle-escape-sequences-double-quoted
            :us-014-handle-escape-sequences-single-quoted
-           :us-015-parse-simple-block-mappings))
+           :us-015-parse-simple-block-mappings
+           :us-016-parse-nested-block-mappings
+           :us-017-parse-simple-block-sequences))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -616,60 +618,155 @@
 
 (define-test phase-2-block-collections
   :parent yamcl-tests
-  "Phase 2: Block-style mappings and sequences"
-  (skip "Phase not started"))
+  "Phase 2: Block-style mappings and sequences")
 
 (define-test us-015-parse-simple-block-mappings
   :parent phase-2-block-collections
   "US-015: Parse simple block mappings"
-  
+
   ;; Basic key-value pair
   (let ((result (parse-from-string "key: value")))
     (is equal "value" (gethash "key" result)
         "key: value should parse to hash table with key 'key' and value 'value'")
-    (is typep result 'hash-table
-        "Should return a hash table"))
-  
-  ;; Multiple key-value pairs  
+    (true (typep result 'hash-table)
+          "Should return a hash table"))
+
+  ;; Multiple key-value pairs
   (let ((result (parse-from-string "name: John
 age: 30
 city: Boston")))
     (is equal "John" (gethash "name" result) "name should be John")
     (is equal 30 (gethash "age" result) "age should be 30")
     (is equal "Boston" (gethash "city" result) "city should be Boston"))
-  
+
   ;; Different scalar types as values
   (let ((result (parse-from-string "boolean: true
 null: null
 number: 42
 string: hello")))
-    (is true (gethash "boolean" result) "boolean should be true")
-    (is cl:null (gethash "null" result) "null should be cl:null")
+    (true (gethash "boolean" result) "boolean should be true")
+    (is eq 'cl:null (gethash "null" result) "null should be cl:null")
     (is = 42 (gethash "number" result) "number should be 42")
     (is string= "hello" (gethash "string" result) "string should be 'hello'"))
-  
+
   ;; Test with quotes
   (let ((result (parse-from-string "'quoted key': \"quoted value\"")))
     (is string= "quoted value" (gethash "quoted key" result)
         "Quoted key and value should parse correctly"))
-  
+
   ;; Error case: missing space after colon (should fail according to YAML spec)
   (false (parse-succeeds-p "key:value")
          "key:value (no space) should fail to parse")
-  
+
   ;; Empty value
   (let ((result (parse-from-string "key:")))
-    (is cl:null (gethash "key" result)
+    (is eq 'cl:null (gethash "key" result)
         "key: (empty value) should parse to null")
-    (is typep result 'hash-table
-        "Should still return a hash table with null value")))
+    (true (typep result 'hash-table)
+          "Should still return a hash table with null value")))
 
-;;; Phase 2: Block Collections Tests
+(define-test us-016-parse-nested-block-mappings
+  :parent phase-2-block-collections
+  "US-016: Parse nested block mappings"
 
-(define-test phase-2-block-collections
-  :parent yamcl-tests
-  "Phase 2: Block-style mappings and sequences"
-  (skip "Phase not started"))
+  ;; Test 1: Basic one-level nesting
+  (let ((result (parse-from-string (format nil "outer:~%  inner: value"))))
+    (true (typep result 'hash-table) "Result should be a hash table")
+    (let ((inner (gethash "outer" result)))
+      (true (typep inner 'hash-table) "Nested value should be a hash table")
+      (is equal "value" (gethash "inner" inner)
+          "Inner key should have value 'value'")))
+
+  ;; Test 2: Two-level nesting
+  (let ((result (parse-from-string (format nil "a:~%  b:~%    c: value"))))
+    (true (typep result 'hash-table) "Result should be a hash table")
+    (let ((a-val (gethash "a" result)))
+      (true (typep a-val 'hash-table) "a's value should be a hash table")
+      (let ((b-val (gethash "b" a-val)))
+        (true (typep b-val 'hash-table) "b's value should be a hash table")
+        (is equal "value" (gethash "c" b-val)
+            "c's value should be 'value'"))))
+
+  ;; Test 3: Nested with multiple siblings
+  (let ((result (parse-from-string (format nil "outer:~%  a: 1~%  b: 2"))))
+    (true (typep result 'hash-table) "Result should be a hash table")
+    (let ((inner (gethash "outer" result)))
+      (true (typep inner 'hash-table) "Nested value should be a hash table")
+      (is = 1 (gethash "a" inner) "a should be 1")
+      (is = 2 (gethash "b" inner) "b should be 2")))
+
+  ;; Test 4: Nested and sibling entries mixed
+  (let ((result (parse-from-string (format nil "outer:~%  inner: value~%other: 42"))))
+    (true (typep result 'hash-table) "Result should be a hash table")
+    (let ((inner (gethash "outer" result)))
+      (true (typep inner 'hash-table) "Nested value should be a hash table")
+      (is equal "value" (gethash "inner" inner) "inner should be 'value'"))
+    (is = 42 (gethash "other" result) "other should be 42"))
+
+  ;; Test 5: Nested with typed scalars
+  (let ((result (parse-from-string (format nil "config:~%  enabled: true~%  count: 99~%  name: test"))))
+    (true (typep result 'hash-table) "Result should be a hash table")
+    (let ((inner (gethash "config" result)))
+      (true (typep inner 'hash-table) "Nested value should be a hash table")
+      (is eql t (gethash "enabled" inner) "enabled should be true")
+      (is = 99 (gethash "count" inner) "count should be 99")
+      (is string= "test" (gethash "name" inner) "name should be 'test'")))
+
+  ;; Test 6: Deep nesting with three levels and siblings at each level
+  (let ((result (parse-from-string (format nil "level1:~%  level2:~%    level3: deep~%    also: value~%  top: sibling"))))
+    (true (typep result 'hash-table) "Result should be a hash table")
+    (let ((l1 (gethash "level1" result)))
+      (true (typep l1 'hash-table) "level1's value should be a hash table")
+      (let ((l2 (gethash "level2" l1)))
+        (true (typep l2 'hash-table) "level2's value should be a hash table")
+        (is equal "deep" (gethash "level3" l2) "level3 should be 'deep'")
+        (is equal "value" (gethash "also" l2) "also should be 'value'"))
+      (is equal "sibling" (gethash "top" l1) "top should be 'sibling'"))))
+
+(define-test us-017-parse-simple-block-sequences
+  :parent phase-2-block-collections
+  "US-017: Parse simple block sequences (- item)"
+
+  ;; Test 1: Single item
+  (let ((result (parse-from-string (format nil "- a"))))
+    (true (typep result 'list) "Result should be a list")
+    (is equal '("a") result
+        "Single item sequence should parse"))
+
+  ;; Test 2: Two items
+  (let ((result (parse-from-string (format nil "- a~%- b"))))
+    (is equal '("a" "b") result
+        "Two-item sequence should parse"))
+
+  ;; Test 3: Numbers
+  (let ((result (parse-from-string (format nil "- 42~%- 100"))))
+    (is equal '(42 100) result
+        "Numeric items should parse"))
+
+  ;; Test 4: Mixed types
+  (let ((result (parse-from-string (format nil "- 42~%- hello~%- true"))))
+    (is equal '(42 "hello" t) result
+        "Mixed type items should parse"))
+
+  ;; Test 5: Three items
+  (let ((result (parse-from-string (format nil "- a~%- b~%- c"))))
+    (is equal '("a" "b" "c") result
+        "Three-item sequence should parse"))
+
+  ;; Test 6: Single item with newline
+  (let ((result (parse-from-string (format nil "- a~%"))))
+    (is equal '("a") result
+        "Single item with trailing newline should parse"))
+
+  ;; Test 7: Single item no newline
+  (let ((result (parse-from-string "- a")))
+    (is equal '("a") result
+        "Single item without newline should parse"))
+
+  ;; Test 8: Boolean items
+  (let ((result (parse-from-string (format nil "- true~%- false"))))
+    (is equal '(t nil) result
+        "Boolean items should parse")))
 
 ;;; Phase 3: Advanced Features Tests
 

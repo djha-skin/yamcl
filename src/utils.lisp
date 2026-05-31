@@ -20,9 +20,11 @@
    #:number-start-p
    #:peek-chr
    #:read-chr
+   #:skip-inline-whitespace
    #:streamable
    #:streamed
    #:unread-all
+   #:current-column
    #:yaml-number-to-cl))
 
 (in-package #:com.djhaskin.yamcl/utils)
@@ -77,7 +79,8 @@
 (defstruct lookahead-stream
   (strm nil :type streamable)
   (buffer-start 0 :type integer)
-  (buffer nil :type array))
+  (buffer nil :type array)
+  (column 0 :type integer))
 
 (defun new-lookahead-stream (strm &key buffer-size)
   (declare (type streamable strm))
@@ -87,7 +90,7 @@
           do
           (setf (elt initial-buffer i) chr))
     (make-lookahead-stream :strm strm :buffer initial-buffer
-                           :buffer-start 0)))
+                           :buffer-start 0 :column 0)))
 
 (defun unread-all (lookahead)
   (declare (type lookahead-stream lookahead))
@@ -98,7 +101,8 @@
           do
           (unread-char chr (lookahead-stream-strm lookahead))
           (setf (elt buffer i) +eof+))
-    (setf (lookahead-stream-buffer-start lookahead) 0)))
+    (setf (lookahead-stream-buffer-start lookahead) 0)
+    (setf (lookahead-stream-column lookahead) 0)))
 
 (defun lookahead-read-chr (lookahead)
   (declare (type lookahead-stream lookahead))
@@ -106,6 +110,20 @@
     (let* ((current-index (lookahead-stream-buffer-start lookahead))
            (chr (elt buffer current-index))
            (next-index (mod (1+ current-index) (length buffer))))
+      ;; Track column position
+      (cond
+        ((characterp chr)
+         (cond
+           ((or (char= chr #\Newline) (char= chr #\Return))
+            (setf (lookahead-stream-column lookahead) 0))
+           ((char= chr #\Tab)
+            ;; Tabs advance to next tab stop (every 8), but simplify: just +1
+            (incf (lookahead-stream-column lookahead)))
+           (t
+            (incf (lookahead-stream-column lookahead)))))
+        (t
+         ;; Non-character (EOF) doesn't affect column
+         ))
       ;; Read new character into the slot we just consumed
       (setf (elt buffer current-index) (read-chr (lookahead-stream-strm lookahead)))
       ;; Advance buffer start
@@ -121,6 +139,21 @@
                       (length buffer)))
              (chr (elt buffer index)))
         chr)))
+
+(defun skip-inline-whitespace (lookahead)
+  "Consume and discard space/tab characters from LOOKAHEAD.
+Returns the next character (peeked)."
+  (declare (type lookahead-stream lookahead))
+  (loop for ch = (lookahead-peek-chr lookahead 0)
+        while (and (characterp ch)
+                   (or (char= ch #\Space) (char= ch #\Tab)))
+        do (lookahead-read-chr lookahead))
+  (lookahead-peek-chr lookahead 0))
+
+(defun current-column (lookahead)
+  "Return the current column position of LOOKAHEAD."
+  (declare (type lookahead-stream lookahead))
+  (lookahead-stream-column lookahead))
 
 (defun number-start-p (chr)
   (declare (type character chr))

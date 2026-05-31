@@ -7,7 +7,10 @@
    #:parse-from
    #:parse-from-string
    #:parse-scalar-from-string
-   #:parse-scalar-lookahead))
+   #:parse-scalar-lookahead
+   #:skip-whitespace-and-comments-lookahead
+   #:blankspace-p
+   #:whitespace-p))
 
 (in-package #:com.djhaskin.yamcl/scalars)
 

@@ -6,36 +6,86 @@
   (:use :cl)
   (:export
    ;; Parsing
-   :parse-from
-   :parse-from-string
+   #:parse-from
+   #:parse-from-string
    ;; Generation
-   :generate-to
-   :generate-to-string)
+   #:generate-to
+   #:generate-to-string)
   (:local-nicknames
-   ;; Utils
-   (:utils #:com.djhaskin.yamcl.utils)
-   ;; Scalars
-   (:scalars #:com.djhaskin.yamcl.scalars)
-   ;; Blocks
-   (:blocks #:com.djhaskin.yamcl.blocks)))
+   (#:utils #:com.djhaskin.yamcl/utils)
+   (#:scalars #:com.djhaskin.yamcl/scalars)
+   (#:blocks #:com.djhaskin.yamcl/blocks)))
 
 (cl:in-package :com.djhaskin.yamcl)
 
-;;; Parsing (implemented in scalars.lisp)
+;;; Parsing
+
+(defun parse-value (lookahead &optional (indent 0))
+  "Parse a YAML value from LOOKAHEAD at the given INDENT level.
+   Skip comments and whitespace, then try:
+   1. Document markers (---, ...)
+   2. Scalar-first approach: read a scalar, check for colon after
+   3. If colon follows => it's a mapping key
+   4. If not => return the scalar as-is"
+  (scalars:skip-whitespace-and-comments-lookahead lookahead)
+  (let ((ch (utils:lookahead-peek-chr lookahead 0)))
+    (cond
+      ((or (null ch) (eq ch utils:+eof+))
+       utils:+eof+)
+      ;; Document start marker (---)
+      ((and (char= ch #\-)
+            (let ((ch1 (utils:lookahead-peek-chr lookahead 1))
+                  (ch2 (utils:lookahead-peek-chr lookahead 2)))
+              (and (characterp ch1) (char= ch1 #\-)
+                   (characterp ch2) (char= ch2 #\-))))
+       (utils:lookahead-read-chr lookahead)  ;; first -
+       (utils:lookahead-read-chr lookahead)  ;; second -
+       (utils:lookahead-read-chr lookahead)  ;; third -
+       (parse-value lookahead indent))
+      ;; Document end marker (...)
+      ((and (char= ch #\.)
+            (let ((ch1 (utils:lookahead-peek-chr lookahead 1))
+                  (ch2 (utils:lookahead-peek-chr lookahead 2)))
+              (and (characterp ch1) (char= ch1 #\.)
+                   (characterp ch2) (char= ch2 #\.))))
+       (utils:lookahead-read-chr lookahead)  ;; first .
+       (utils:lookahead-read-chr lookahead)  ;; second .
+       (utils:lookahead-read-chr lookahead)  ;; third .
+       utils:+eof+)
+      ;; Block sequence entry (- space)
+      ((and (char= ch #\-)
+            (let ((ch1 (utils:lookahead-peek-chr lookahead 1)))
+              (and (characterp ch1) (char= ch1 #\Space))))
+       (blocks:parse-block-sequence lookahead indent
+                                    #'parse-value))
+      ;; Scalar-first: read the scalar, then check for mapping
+      (t
+       (let ((scalar (scalars:parse-scalar-lookahead lookahead)))
+         (if (eq scalar utils:+eof+)
+             utils:+eof+
+             (or (blocks:parse-mapping-from-key lookahead scalar indent)
+                 scalar)))))))
 
 (defun parse-from (source)
   "Parse a YAML value from SOURCE.
 SOURCE must be a stream.
-Returns the parsed value or +eof+ at end of input.
-Handles scalars (comments, whitespace, booleans, null, numbers, strings)
-and block collections (mappings, sequences)."
+Returns the parsed value or +eof+ at end of input."
   (let ((lookahead (utils:new-lookahead-stream source :buffer-size 5)))
-    ;; First try to parse as mapping (US-015-C/D)
-    (let ((mapping (blocks:parse-simple-mapping lookahead)))
-      (if mapping
-          mapping
-          ;; Fall back to scalar parsing
-          (scalars:parse-from-lookahead lookahead)))))
+    (let ((result (parse-value lookahead)))
+      ;; Skip trailing whitespace and comments
+      (scalars:skip-whitespace-and-comments-lookahead lookahead)
+      ;; After parsing, allow document markers
+      (unless (eq result utils:+eof+)
+        (let ((next-ch (utils:lookahead-peek-chr lookahead 0)))
+          (unless (or (null next-ch)
+                      (eq next-ch utils:+eof+)
+                      (char= next-ch #\-)
+                      (char= next-ch #\.))
+            (error 'utils:extraction-error
+                   :expected "end of input or document marker"
+                   :got next-ch))))
+      (utils:unread-all lookahead)
+      result)))
 
 (defun parse-from-string (string)
   "Parse a YAML value from STRING.
@@ -68,8 +118,7 @@ Handles all characters that need escaping per RFC 8259."
                    (progn
                      (push (car escape) result)
                      (push (cdr escape) result))
-                   (progn
-                     (push (string ch) result)))))
+                   (push (string ch) result))))
     (apply #'concatenate 'string (reverse result))))
 
 (defun generate-scalar (stream value)
