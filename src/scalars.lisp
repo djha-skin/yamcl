@@ -9,6 +9,8 @@
    #:parse-scalar-from-string
    #:parse-scalar-lookahead
    #:skip-whitespace-and-comments-lookahead
+   #:skip-flow-separator
+   #:parse-flow-scalar-lookahead
    #:blankspace-p
    #:whitespace-p))
 
@@ -68,61 +70,173 @@ Returns the first non-skipped character (peeked)."
                   (lookahead-read-chr lookahead))))))
   (lookahead-peek-chr lookahead 0))
 
+(defun skip-flow-separator (lookahead)
+  "Skip spaces, tabs, newlines, and comments in LOOKAHEAD.
+Does NOT skip commas (they are flow delimiters).
+Returns the first non-skipped character (peeked)."
+  (loop for ch = (lookahead-peek-chr lookahead 0)
+        while (and (not (eq ch +eof+))
+                   (or (blankspace-p ch)
+                       (whitespace-p ch)
+                       (char= ch #\#)))
+        do (cond
+             ((blankspace-p ch)
+              (lookahead-read-chr lookahead))
+             ((whitespace-p ch)
+              (lookahead-read-chr lookahead))
+             ((char= ch #\#)
+              (lookahead-read-chr lookahead)
+              (loop for next = (lookahead-peek-chr
+                                 lookahead 0)
+                    while (and
+                            (characterp next)
+                            (not (or
+                                    (char=
+                                      next
+                                      #\Newline)
+                                    (char=
+                                      next
+                                      #\Return))))
+                    do (lookahead-read-chr lookahead))
+              (let ((next (lookahead-peek-chr
+                            lookahead 0)))
+                (when (and (characterp next)
+                           (or
+                             (char= next #\Newline)
+                             (char= next #\Return)))
+                  (lookahead-read-chr lookahead))))))
+  (lookahead-peek-chr lookahead 0))
+
+(defun parse-flow-scalar-lookahead (lookahead)
+  "Parse a scalar value from LOOKAHEAD within flow context.
+Like PARSE-SCALAR-LOOKAHEAD but does not skip commas."
+  (skip-flow-separator lookahead)
+  (let ((ch (lookahead-peek-chr lookahead 0))
+        (reserved-word
+          (starts-with-reserved-word-p lookahead)))
+    (cond
+      ((eq ch +eof+) +eof+)
+      ((or (char= ch #\") (char= ch #\'))
+       (parse-string lookahead))
+      ((digit-char-p ch) (parse-number lookahead))
+      ((or (char= ch #\-)
+           (char= ch #\+)
+           (char= ch #\.))
+       (parse-number lookahead))
+      ((equal reserved-word "true")
+       (parse-boolean lookahead))
+      ((or (equal reserved-word "false")
+           (equal reserved-word "null")
+           (equal reserved-word "~"))
+       (parse-null lookahead))
+      ((or (alpha-char-p ch)
+           (char= ch #\_)
+           (and (char= ch #\~)
+                (null reserved-word)))
+       (parse-bareword-string lookahead))
+      (t
+       (error 'extraction-error
+              :expected "valid scalar"
+              :got ch)))))
+
 (defun parse-boolean (lookahead)
   "Parse a boolean value (true/false) from LOOKAHEAD.
 Returns T or NIL. Case-insensitive per YAML 1.2.2 Core Schema."
   (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
       ((or (char= ch #\t) (char= ch #\T))
-       ;; Parse "true" - read and verify each character (case-insensitive)
-       (lookahead-read-chr lookahead) ;; consume 't' or 'T'
+       ;; Parse "true" - read and verify each char
+       (lookahead-read-chr lookahead)
        (let ((r (lookahead-read-chr lookahead))
              (u (lookahead-read-chr lookahead))
              (e (lookahead-read-chr lookahead)))
-         (unless (and (characterp r) (or (char= r #\r) (char= r #\R)))
-           (error 'extraction-error :expected "true (case-insensitive)" :got ch))
-         (unless (and (characterp u) (or (char= u #\u) (char= u #\U)))
-           (error 'extraction-error :expected "true (case-insensitive)" :got ch))
-         (unless (and (characterp e) (or (char= e #\e) (char= e #\E)))
-           (error 'extraction-error :expected "true (case-insensitive)" :got ch)))
-       ;; Check that we're at end of scalar (whitespace, comment, or EOF)
-       (let ((next-ch (lookahead-peek-chr lookahead 0)))
+         (unless (and (characterp r)
+                      (or (char= r #\r)
+                          (char= r #\R)))
+           (error 'extraction-error
+                  :expected "true (case-insensitive)"
+                  :got ch))
+         (unless (and (characterp u)
+                      (or (char= u #\u)
+                          (char= u #\U)))
+           (error 'extraction-error
+                  :expected "true (case-insensitive)"
+                  :got ch))
+         (unless (and (characterp e)
+                      (or (char= e #\e)
+                          (char= e #\E)))
+           (error 'extraction-error
+                  :expected "true (case-insensitive)"
+                  :got ch)))
+       ;; Check end of scalar: whitespace, comment,
+       ;; EOF, comma, or closing bracket
+       (let ((next-ch
+               (lookahead-peek-chr lookahead 0)))
          (when (and (characterp next-ch)
-                    (not (char= next-ch #\#)) ; comment
+                    (not (char= next-ch #\#))
                     (not (char= next-ch #\Space))
                     (not (char= next-ch #\Tab))
                     (not (char= next-ch #\Newline))
-                    (not (char= next-ch #\Return)))
-           (error 'extraction-error :expected "end of scalar after 'true'" :got next-ch)))
+                    (not (char= next-ch #\Return))
+                    (not (char= next-ch #\,))
+                    (not (char= next-ch #\])))
+           (error 'extraction-error
+                  :expected
+                  "end of scalar after 'true'"
+                  :got next-ch)))
        t)
       ((or (char= ch #\f) (char= ch #\F))
-       ;; Parse "false" - read and verify each character (case-insensitive)
-       (lookahead-read-chr lookahead) ;; consume 'f' or 'F'
+       ;; Parse "false" - read and verify each char
+       (lookahead-read-chr lookahead)
        (let ((a (lookahead-read-chr lookahead))
              (l1 (lookahead-read-chr lookahead))
              (s (lookahead-read-chr lookahead))
              (e (lookahead-read-chr lookahead)))
-         (unless (and (characterp a) (or (char= a #\a) (char= a #\A)))
-           (error 'extraction-error :expected "false (case-insensitive)" :got ch))
-         (unless (and (characterp l1) (or (char= l1 #\l) (char= l1 #\L)))
-           (error 'extraction-error :expected "false (case-insensitive)" :got ch))
-         (unless (and (characterp s) (or (char= s #\s) (char= s #\S)))
-           (error 'extraction-error :expected "false (case-insensitive)" :got ch))
-         (unless (and (characterp e) (or (char= e #\e) (char= e #\E)))
-           (error 'extraction-error :expected "false (case-insensitive)" :got ch)))
-       ;; Check that we're at end of scalar (whitespace, comment, or EOF)
-       (let ((next-ch (lookahead-peek-chr lookahead 0)))
+         (unless (and (characterp a)
+                      (or (char= a #\a)
+                          (char= a #\A)))
+           (error 'extraction-error
+                  :expected "false (case-insensitive)"
+                  :got ch))
+         (unless (and (characterp l1)
+                      (or (char= l1 #\l)
+                          (char= l1 #\L)))
+           (error 'extraction-error
+                  :expected "false (case-insensitive)"
+                  :got ch))
+         (unless (and (characterp s)
+                      (or (char= s #\s)
+                          (char= s #\S)))
+           (error 'extraction-error
+                  :expected "false (case-insensitive)"
+                  :got ch))
+         (unless (and (characterp e)
+                      (or (char= e #\e)
+                          (char= e #\E)))
+           (error 'extraction-error
+                  :expected "false (case-insensitive)"
+                  :got ch)))
+       ;; Check end of scalar: whitespace, comment,
+       ;; EOF, comma, or closing bracket
+       (let ((next-ch
+               (lookahead-peek-chr lookahead 0)))
          (when (and (characterp next-ch)
-                    (not (char= next-ch #\#)) ; comment
+                    (not (char= next-ch #\#))
                     (not (char= next-ch #\Space))
                     (not (char= next-ch #\Tab))
                     (not (char= next-ch #\Newline))
-                    (not (char= next-ch #\Return)))
-           (error 'extraction-error :expected "end of scalar after 'false'" :got next-ch)))
+                    (not (char= next-ch #\Return))
+                    (not (char= next-ch #\,))
+                    (not (char= next-ch #\])))
+           (error 'extraction-error
+                  :expected
+                  "end of scalar after 'false'"
+                  :got next-ch)))
        nil)
       (t
        (error 'extraction-error
-              :expected "true or false (case-insensitive)"
+              :expected
+              "true or false (case-insensitive)"
               :got ch)))))
 
 (defun parse-null (lookahead)

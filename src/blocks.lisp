@@ -5,11 +5,14 @@
   (:use #:cl #:com.djhaskin.yamcl/utils)
   (:import-from #:com.djhaskin.yamcl/scalars
                 #:parse-scalar-lookahead
-                #:skip-whitespace-and-comments-lookahead)
+                #:skip-whitespace-and-comments-lookahead
+                #:parse-flow-scalar-lookahead
+                #:skip-flow-separator)
   (:export
    #:parse-mapping-from-key
    #:parse-block-value
    #:parse-block-sequence
+   #:parse-flow-sequence
    #:scalar-to-key-string))
 
 (in-package #:com.djhaskin.yamcl/blocks)
@@ -205,3 +208,47 @@ Returns a list of parsed items."
                          (char= ch1 #\Return)))
           (return))))
     (reverse items)))
+
+(defun parse-flow-sequence (lookahead)
+  "Parse a YAML flow sequence [a, b, c] from LOOKAHEAD.
+Returns a list of parsed items.
+Handles empty sequences, trailing commas, nested
+flow sequences, and comments inside the sequence."
+  (lookahead-read-chr lookahead) ;; consume [
+  (let ((items nil))
+    (loop
+      (skip-flow-separator lookahead)
+      (let ((ch (lookahead-peek-chr lookahead 0)))
+        (cond
+          ;; End of sequence
+          ((char= ch #\])
+           (lookahead-read-chr lookahead)
+           (return (reverse items)))
+          ;; Nested flow sequence
+          ((char= ch #\[)
+           (push (parse-flow-sequence lookahead)
+                 items))
+          ;; Comma (at start or after another comma)
+          ((char= ch #\,)
+           (lookahead-read-chr lookahead))
+          ;; Scalar value
+          (t
+           (push (parse-flow-scalar-lookahead
+                   lookahead)
+                 items)
+           ;; After scalar, check for , or ]
+           (skip-flow-separator lookahead)
+           (let ((ch2
+                   (lookahead-peek-chr lookahead 0)))
+             (cond
+               ((char= ch2 #\])
+                (lookahead-read-chr lookahead)
+                (return (reverse items)))
+               ((char= ch2 #\,)
+                (lookahead-read-chr lookahead))
+               (t
+                (error
+                  'extraction-error
+                  :expected
+                  "comma or closing bracket"
+                  :got ch2))))))))))

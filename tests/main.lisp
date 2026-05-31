@@ -37,7 +37,8 @@
            :us-017-parse-simple-block-sequences
            :us-018-parse-nested-block-sequences
            :us-019-parse-mixed-mappings-and-sequences
-           :us-020-handle-indentation-in-block-collections))
+           :us-020-handle-indentation-in-block-collections
+           :us-021-parse-flow-sequences))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -966,6 +967,80 @@ string: hello")))
                   (format nil "- a~%- b"))))
     (is equal '("a" "b") result
         "Two-item sequence at indent 0")))
+
+(define-test us-021-parse-flow-sequences
+  :parent phase-2-block-collections
+  "US-021: Parse flow sequences [a, b, c]"
+
+  ;; Test 1: Empty flow sequence
+  (let ((result (parse-from-string "[]")))
+    (is equal nil result
+        "Empty [] should parse to nil")
+    (is typep 'list result
+        "Empty [] should return a list"))
+
+  ;; Test 2: Single item
+  (let ((result (parse-from-string "[a]")))
+    (is equal '("a") result
+        "[a] should parse to (a)"))
+
+  ;; Test 3: Two items
+  (let ((result (parse-from-string "[a, b]")))
+    (is equal '("a" "b") result
+        "[a, b] should parse to (a b)"))
+
+  ;; Test 4: Three items
+  (let ((result (parse-from-string "[1, 2, 3]")))
+    (is equal '(1 2 3) result
+        "[1, 2, 3] should parse to (1 2 3)"))
+
+  ;; Test 5: Mixed types
+  (let ((result (parse-from-string "[\"hello\", true, null]")))
+    (is equal "hello" (first result) "String item")
+    (is equal t (second result) "Boolean item")
+    (is eq 'cl:null (third result) "Null item"))
+
+  ;; Test 6: No spaces around commas
+  (let ((result (parse-from-string "[a,b,c]")))
+    (is equal '("a" "b" "c") result
+        "[a,b,c] should work without spaces"))
+
+  ;; Test 7: Extra spaces
+  (let ((result (parse-from-string "[  a ,  b  ]")))
+    (is equal '("a" "b") result
+        "Extra spaces should be tolerated"))
+
+  ;; Test 8: Trailing comma (valid per YAML spec)
+  (let ((result (parse-from-string "[a,]")))
+    (is equal '("a") result
+        "Trailing comma should be allowed"))
+
+  ;; Test 9: Nested flow sequence
+  (let ((result (parse-from-string "[[a, b], c]")))
+    (is equal '(("a" "b") "c") result
+        "Nested flow sequence should work"))
+
+  ;; Test 10: Flow sequence with numbers and booleans
+  (let ((result (parse-from-string "[1, true, 3.14]")))
+    (is equal 1 (first result) "Integer")
+    (is equal t (second result) "Boolean")
+    (is equal 3.14 (third result) "Float"))
+
+  ;; Test 11: Single-quoted strings in flow sequence
+  (let ((result (parse-from-string "['hello', 'world']")))
+    (is equal '("hello" "world") result
+        "Single-quoted strings should work in flow sequence"))
+
+  ;; Test 12: Null items in flow sequence
+  (let ((result (parse-from-string "[null, ~, false]")))
+    (is eq 'cl:null (first result) "null item")
+    (is eq 'cl:null (second result) "tilde item")
+    (is equal nil (third result) "false item"))
+
+  ;; Test 13: Flow sequence with comments
+  (let ((result (parse-from-string (format nil "[a, # comment~%b]"))))
+    (is equal '("a" "b") result
+        "Comments inside flow sequence should be skipped")))
 
 ;;; Phase 3: Advanced Features Tests
 
