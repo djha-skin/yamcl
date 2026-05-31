@@ -43,7 +43,8 @@
            :us-023-parse-nested-flow-collections
            :us-024-parse-empty-collections
            :us-025-parse-literal-block-scalars
-           :us-026-parse-folded-block-scalars))
+           :us-026-parse-folded-block-scalars
+           :us-027-handle-chomping-modes))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -1443,6 +1444,90 @@ string: hello")))
     (is equal "This is folded text"
         (gethash "text" result)
         "Mapping with folded scalar value")))
+
+(define-test us-027-handle-chomping-modes
+  ;; === Literal block scalar chomping ===
+  ;; Test 1: |- strips trailing newlines
+  (let ((result (parse-from-string
+                  (format nil "|-~%  content~%"))))
+    (is equal "content" result
+        "|- should strip trailing newlines"))
+  ;; Test 2: |+ keeps all trailing newlines
+  (let ((result (parse-from-string
+                  (format nil "|+~%  content~%"))))
+    (is equal
+        (format nil "content~%") result
+        "|+ keeps trailing newline"))
+  ;; Test 3: | clips (default) - single trailing newline
+  (let ((result (parse-from-string
+                  (format nil "|~%  content~%"))))
+    (is equal
+        (format nil "content~%") result
+        "| clips trailing newline"))
+  ;; Test 4: |- with multiple trailing newlines
+  (let ((result (parse-from-string
+                  (format nil "|-~%  line1~%~%"))))
+    (is equal "line1" result
+        "|- strips all trailing newlines"))
+  ;; Test 5: |+ with multiple trailing newlines
+  (let ((result (parse-from-string
+                  (format nil "|+~%  line1~%~%"))))
+    (is equal
+        (format nil "line1~%~%") result
+        "|+ keeps multiple trailing newlines"))
+  ;; Test 6: |- empty block
+  (let ((result (parse-from-string
+                  (format nil "|-~%"))))
+    (is equal "" result
+        "|- empty block returns empty string"))
+  ;; Test 7: |+ empty block
+  (let ((result (parse-from-string
+                  (format nil "|+~%"))))
+    (is equal "" result
+        "|+ empty block returns empty string"))
+  ;; === Folded block scalar chomping ===
+  ;; Test 8: >- strips trailing newlines
+  (let ((result (parse-from-string
+                  (format nil ">-~%  folded~%  lines~%"))))
+    (is equal "folded lines" result
+        ">- strips trailing newlines"))
+  ;; Test 9: >+ keeps all trailing newlines
+  (let ((result (parse-from-string
+                  (format nil ">+~%  folded~%  lines~%"))))
+    (is equal
+        (format nil "folded lines~%") result
+        ">+ keeps trailing newline"))
+  ;; Test 10: > clips (default)
+  (let ((result (parse-from-string
+                  (format nil ">~%  folded~%  lines~%"))))
+    (is equal
+        (format nil "folded lines~%") result
+        "> clips trailing newline"))
+  ;; Test 11: >- with blank lines
+  (let ((result (parse-from-string
+                  (format nil ">-~%  line1~%~%  line2~%"))))
+    (is equal
+        (format nil "line1~%~%line2") result
+        ">- strips trailing, preserves internal"))
+  ;; Test 12: >+ with blank lines
+  (let ((result (parse-from-string
+                  (format nil ">+~%  line1~%~%  line2~%"))))
+    (is equal
+        (format nil "line1~%~%line2~%") result
+        ">+ keeps trailing after content"))
+  ;; Test 13: |- as mapping value
+  (let ((result (parse-from-string
+                  (format nil "key: |-~%  val"))))
+    (is equal "val"
+        (gethash "key" result)
+        "|- as mapping value strips trailing"))
+  ;; Test 14: |+ as mapping value
+  (let ((result (parse-from-string
+                  (format nil "key: |+~%  val~%"))))
+    (is equal
+        (format nil "val~%")
+        (gethash "key" result)
+        "|+ as mapping value keeps trailing")))
 
 ;;; Phase 3: Advanced Features Tests
 
