@@ -34,7 +34,10 @@
            :us-014-handle-escape-sequences-single-quoted
            :us-015-parse-simple-block-mappings
            :us-016-parse-nested-block-mappings
-           :us-017-parse-simple-block-sequences))
+           :us-017-parse-simple-block-sequences
+           :us-018-parse-nested-block-sequences
+           :us-019-parse-mixed-mappings-and-sequences
+           :us-020-handle-indentation-in-block-collections))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -857,6 +860,112 @@ string: hello")))
           "First user should parse")
       (is equal "bob" (gethash "name" (second users))
           "Second user should parse"))))
+
+(define-test us-020-handle-indentation-in-block-collections
+  :parent phase-2-block-collections
+  "US-020: Handle indentation in block collections"
+
+  ;; --- Mapping indentation ---
+
+  ;; Test 1: 2-space indent nesting
+  (let ((result (parse-from-string (format nil "outer:~%  inner: value"))))
+    (is equal "value"
+        (gethash "inner" (gethash "outer" result))
+        "2-space indent nesting should work"))
+
+  ;; Test 2: Dedent ends mapping scope
+  (let ((result (parse-from-string (format nil "a:~%  b: 1~%c: 2"))))
+    (is equal 1 (gethash "b" (gethash "a" result))
+        "Nested value should parse")
+    (is equal 2 (gethash "c" result)
+        "Dedent to column 0 should start new mapping"))
+
+  ;; Test 3: Same indent continues mapping
+  (let ((result (parse-from-string (format nil "a:~%  b: 1~%  c: 2"))))
+    (let ((a (gethash "a" result)))
+      (is equal 1 (gethash "b" a)
+          "First nested key should parse")
+      (is equal 2 (gethash "c" a)
+          "Second nested key at same indent should be sibling")))
+
+  ;; Test 4: 4-space indent nesting
+  (let ((result (parse-from-string (format nil "key:~%    deep: value"))))
+    (is equal "value"
+        (gethash "deep" (gethash "key" result))
+        "4-space indent nesting should work"))
+
+  ;; Test 5: Deeply nested mapping
+  (let ((result (parse-from-string
+                  (format nil "a:~%  b:~%    c:~%      d: value"))))
+    (is equal "value"
+        (gethash "d"
+                 (gethash "c"
+                          (gethash "b"
+                                   (gethash "a" result))))
+        "Four levels of mapping nesting should work"))
+
+  ;; --- Sequence indentation ---
+
+  ;; Test 6: All sequence entries at same indent
+  (let ((result (parse-from-string (format nil "- a~%- b~%- c"))))
+    (is equal '("a" "b" "c") result
+        "All sequence entries at indent 0 should work"))
+
+  ;; Test 7: Sequence entries with varying content types
+  (let ((result (parse-from-string
+                  (format nil "- first~%- 42~%- true~%- null"))))
+    (is equal "first" (first result) "String item")
+    (is equal 42 (second result) "Number item")
+    (is equal t (third result) "Boolean item")
+    (is eq 'cl:null (fourth result) "Null item"))
+
+  ;; Test 8: Indented sequence under mapping
+  (let ((result (parse-from-string
+                  (format nil "items:~%  - a~%  - b~%  - c"))))
+    (is equal '("a" "b" "c")
+        (gethash "items" result)
+        "Indented sequence under mapping should work"))
+
+  ;; Test 9: Mixed nesting - mapping containing sequence
+  ;; containing mapping
+  (let ((result (parse-from-string
+                  (format nil "users:~%  - name: alice~%    age: 30~%  - name: bob~%    age: 25"))))
+    (let ((users (gethash "users" result)))
+      (is equal "alice"
+          (gethash "name" (first users))
+          "First user name")
+      (is equal 30
+          (gethash "age" (first users))
+          "First user age")
+      (is equal "bob"
+          (gethash "name" (second users))
+          "Second user name")
+      (is equal 25
+          (gethash "age" (second users))
+          "Second user age")))
+
+  ;; Test 10: Deep indent (20 spaces)
+  (let ((result (parse-from-string
+                  (format nil "a:~%                    deep: value"))))
+    (is equal "value"
+        (gethash "deep" (gethash "a" result))
+        "Very deep indent should work"))
+
+  ;; --- Edge cases ---
+
+  ;; Test 11: Empty value then dedent
+  (let ((result (parse-from-string
+                  (format nil "a:~%b: 2"))))
+    (is eq 'cl:null (gethash "a" result)
+        "Empty value should be null")
+    (is equal 2 (gethash "b" result)
+        "Siblings at same indent should parse"))
+
+  ;; Test 12: Mapping at indent 0 after sequence
+  (let ((result (parse-from-string
+                  (format nil "- a~%- b"))))
+    (is equal '("a" "b") result
+        "Two-item sequence at indent 0")))
 
 ;;; Phase 3: Advanced Features Tests
 

@@ -116,24 +116,23 @@ parse as a nested mapping."
            (table (make-hash-table :test 'equal)))
       (if (eq value +null+)
           (progn
-            (skip-whitespace-and-comments-lookahead lookahead)
+            (skip-whitespace-and-comments-lookahead
+              lookahead)
             (let ((next-ch
                     (lookahead-peek-chr lookahead 0))
                   (next-col
                     (current-column lookahead)))
               (if (and (characterp next-ch)
                        (> next-col indent))
-                  (let ((nested
-                          (parse-block-value
-                            lookahead next-col)))
-                    (setf (gethash key-str table) nested)
-                    (loop while
-                      (try-parse-next-pair
-                        lookahead table indent))
-                    table)
-                  (progn
-                    (setf (gethash key-str table) +null+)
-                    table))))
+                  (setf (gethash key-str table)
+                        (parse-block-value
+                          lookahead next-col))
+                  (setf (gethash key-str table)
+                        +null+)))
+            (loop while
+              (try-parse-next-pair
+                lookahead table indent))
+            table)
           (progn
             (setf (gethash key-str table) value)
             (loop while
