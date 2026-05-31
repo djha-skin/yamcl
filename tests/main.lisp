@@ -39,7 +39,8 @@
            :us-019-parse-mixed-mappings-and-sequences
            :us-020-handle-indentation-in-block-collections
            :us-021-parse-flow-sequences
-           :us-022-parse-flow-mappings))
+           :us-022-parse-flow-mappings
+           :us-023-parse-nested-flow-collections))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -1137,6 +1138,93 @@ string: hello")))
         "First pair with comment after comma")
     (is string= "d" (gethash "c" result)
         "Second pair after comment")))
+
+(define-test us-023-parse-nested-flow-collections
+  :parent phase-2-block-collections
+  "US-023: Parse nested flow collections"
+
+  ;; Test 1: Deep nesting in sequence
+  (let ((result (parse-from-string "[[[a]]]")))
+    (is equal '((("a"))) result
+        "Triple-nested sequence should work"))
+
+  ;; Test 2: Flow mapping inside flow sequence
+  (let ((result (parse-from-string "[{a: 1}, {b: 2}]")))
+    (is = 1 (gethash "a" (first result))
+        "First mapping in sequence")
+    (is = 2 (gethash "b" (second result))
+        "Second mapping in sequence"))
+
+  ;; Test 3: Flow sequence inside flow mapping value
+  (let ((result (parse-from-string "{a: [1, 2, 3]}")))
+    (is equal '(1 2 3) (gethash "a" result)
+        "Sequence value should work"))
+
+  ;; Test 4: Mixed deep nesting
+  (let ((result
+          (parse-from-string "{a: [{b: [c]}]}")))
+    (let ((list-val (gethash "a" result)))
+      (is = 1 (length list-val)
+          "List should have 1 item")
+      (let ((map-val (first list-val)))
+        (is typep 'hash-table map-val
+            "Inner item should be map")
+        (is equal '("c")
+            (gethash "b" map-val)
+            "Deeply nested value"))))
+
+  ;; Test 5: Empty nested collections
+  (let ((result (parse-from-string "[[], {}]")))
+    (is equal nil (first result)
+        "Empty sequence in sequence")
+    (is typep 'hash-table (second result)
+        "Empty mapping in sequence")
+    (is = 0 (hash-table-count (second result))
+        "Empty mapping should have 0 entries"))
+
+  ;; Test 6: Empty nested in mapping
+  (let ((result (parse-from-string "{a: [], b: {}}")))
+    (is equal nil (gethash "a" result)
+        "Empty sequence as value")
+    (is typep 'hash-table (gethash "b" result)
+        "Empty mapping as value"))
+
+  ;; Test 7: Sequence of sequences of sequences
+  (let ((result (parse-from-string "[[1, 2], [3, 4]]")))
+    (is equal '(1 2) (first result) "First inner")
+    (is equal '(3 4) (second result) "Second inner"))
+
+  ;; Test 8: Mapping with nested mapping and sequence
+  (let ((result
+          (parse-from-string
+            "{a: {b: [1, 2]}, c: [3, 4]}")))
+    (is equal '(1 2)
+        (gethash "b" (gethash "a" result))
+        "Nested mapping with sequence value")
+    (is equal '(3 4) (gethash "c" result)
+        "Top-level sequence value"))
+
+  ;; Test 9: Deep nesting in mapping
+  (let ((result
+          (parse-from-string "{a: {b: {c: d}}}")))
+    (let ((mid (gethash "a" result)))
+      (is typep 'hash-table mid
+          "Middle level should be map")
+      (is string= "d"
+          (gethash "c" (gethash "b" mid))
+          "Deeply nested value")))
+
+  ;; Test 10: Sequence containing mixed types and collections
+  (let ((result
+          (parse-from-string
+            "[1, {a: b}, [x, y], true]")))
+    (is = 1 (first result) "integer item")
+    (is string= "b"
+        (gethash "a" (second result))
+        "mapping item")
+    (is equal '("x" "y") (third result)
+        "sequence item")
+    (is eq t (fourth result) "boolean item")))
 
 ;;; Phase 3: Advanced Features Tests
 
