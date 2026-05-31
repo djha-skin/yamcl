@@ -50,11 +50,15 @@
       (t
        (parse-scalar-lookahead lookahead)))))
 
-(defun try-parse-next-pair (lookahead table indent)
+(defun try-parse-next-pair (lookahead table indent
+                            &optional (value-parser
+                                        #'parse-block-value))
   "Try to parse another key-value pair at the given INDENT level.
 Skips whitespace/comments first. If the next content is at a
 different indent level, returns NIL without consuming anything.
-If at the same indent, parses a key-value pair and adds to TABLE."
+If at the same indent, parses a key-value pair and adds to TABLE.
+VALUE-PARSER is called for values that need block parsing
+(sequences, nested mappings on next lines)."
   (skip-whitespace-and-comments-lookahead lookahead)
   (let ((ch (lookahead-peek-chr lookahead 0)))
     (when (or (null ch) (eq ch +eof+))
@@ -67,14 +71,31 @@ If at the same indent, parses a key-value pair and adds to TABLE."
       (return-from try-parse-next-pair nil))
     (skip-inline-whitespace lookahead)
     (let ((ch (lookahead-peek-chr lookahead 0)))
-      (when (or (not (characterp ch)) (char/= ch #\:))
+      (when (or (not (characterp ch))
+                (char/= ch #\:))
         (return-from try-parse-next-pair nil))
       (unless (colon-mapping-separator-p lookahead)
         (return-from try-parse-next-pair nil))
       (lookahead-read-chr lookahead)
       (let* ((key-str (scalar-to-key-string key))
-             (value (parse-value-after-colon lookahead)))
-        (setf (gethash key-str table) value)
+             (value (parse-value-after-colon
+                      lookahead)))
+        (if (eq value +null+)
+            (progn
+              (skip-whitespace-and-comments-lookahead
+                lookahead)
+              (let ((next-ch
+                      (lookahead-peek-chr lookahead 0))
+                    (next-col
+                      (current-column lookahead)))
+                (if (and (characterp next-ch)
+                         (> next-col indent))
+                    (setf (gethash key-str table)
+                          (funcall value-parser
+                                   lookahead next-col))
+                    (setf (gethash key-str table)
+                          +null+))))
+            (setf (gethash key-str table) value))
         t))))
 
 (defun parse-mapping-from-key (lookahead key indent)
@@ -122,14 +143,32 @@ parse as a nested mapping."
 
 (defun parse-block-value (lookahead &optional (indent 0))
   "Parse a YAML block-style value from LOOKAHEAD at INDENT
-level. Uses scalar-first approach: read a scalar, check for
-colon. If colon follows, it is a mapping key -- delegate to
+level. Checks for block sequence entries first, then uses
+scalar-first approach: read a scalar, check for colon.
+If colon follows, it is a mapping key -- delegate to
 parse-mapping-from-key. If not, return the scalar as-is."
-  (let ((scalar (parse-scalar-lookahead lookahead)))
-    (if (eq scalar +eof+)
-        +eof+
-        (or (parse-mapping-from-key lookahead scalar indent)
-            scalar))))
+  (let ((ch (lookahead-peek-chr lookahead 0)))
+    (cond
+      ;; Block sequence entry (- space or - eol)
+      ((and (characterp ch)
+            (char= ch #\-)
+            (let ((ch1 (lookahead-peek-chr
+                         lookahead 1)))
+              (and (characterp ch1)
+                   (or (char= ch1 #\Space)
+                       (char= ch1 #\Newline)
+                       (char= ch1 #\Return)))))
+       (parse-block-sequence
+         lookahead indent #'parse-block-value))
+      ;; Scalar-first approach
+      (t
+       (let ((scalar
+               (parse-scalar-lookahead lookahead)))
+         (if (eq scalar +eof+)
+             +eof+
+             (or (parse-mapping-from-key
+                   lookahead scalar indent)
+                 scalar)))))))
 
 (defun parse-block-sequence (lookahead indent item-parser)
   "Parse a block sequence from LOOKAHEAD at INDENT level.

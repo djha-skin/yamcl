@@ -811,6 +811,53 @@ string: hello")))
     (is equal '(("quoted" "single")) result
         "Nested items with quoted strings should parse")))
 
+(define-test us-019-parse-mixed-mappings-and-sequences
+  :parent phase-2-block-collections
+  "US-019: Parse mixed mappings and sequences"
+  ;; Test 1: Mapping with sequence value
+  (let ((result (parse-from-string (format nil "items:~%  - a~%  - b"))))
+    (is equal '("a" "b") (gethash "items" result)
+        "Mapping with sequence value should parse"))
+
+  ;; Test 2: Sequence with mapping item
+  (let ((result (parse-from-string (format nil "- key: value"))))
+    (is equal "value" (gethash "key" (first result))
+        "Sequence with mapping item should parse"))
+
+  ;; Test 3: Mapping with nested mapping and sequence
+  (let ((result (parse-from-string (format nil "config:~%  name: test~%  items:~%    - a~%    - b"))))
+    (let ((config (gethash "config" result)))
+      (is equal "test" (gethash "name" config)
+          "Nested mapping value should parse")
+      (is equal '("a" "b") (gethash "items" config)
+          "Nested sequence value should parse")))
+
+  ;; Test 4: Multiple mapping keys with sequence values
+  (let ((result (parse-from-string (format nil "first:~%  - x~%second:~%  - y"))))
+    (is equal '("x") (gethash "first" result)
+        "First sequence should parse")
+    (is equal '("y") (gethash "second" result)
+        "Second sequence should parse"))
+
+  ;; Test 5: Sequence containing mappings
+  (let ((result (parse-from-string (format nil "- name: alice~%  age: 30~%- name: bob~%  age: 25"))))
+    (is equal "alice" (gethash "name" (first result))
+        "First mapping name should parse")
+    (is equal 30 (gethash "age" (first result))
+        "First mapping age should parse")
+    (is equal "bob" (gethash "name" (second result))
+        "Second mapping name should parse")
+    (is equal 25 (gethash "age" (second result))
+        "Second mapping age should parse"))
+
+  ;; Test 6: Mapping value is a list of mappings
+  (let ((result (parse-from-string (format nil "users:~%  - name: alice~%  - name: bob"))))
+    (let ((users (gethash "users" result)))
+      (is equal "alice" (gethash "name" (first users))
+          "First user should parse")
+      (is equal "bob" (gethash "name" (second users))
+          "Second user should parse"))))
+
 ;;; Phase 3: Advanced Features Tests
 
 (define-test phase-3-advanced-features
