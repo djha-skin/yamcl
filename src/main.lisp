@@ -67,6 +67,9 @@
       ;; Flow mapping ({key: value})
       ((char= ch #\{)
        (blocks:parse-flow-mapping lookahead))
+      ;; Literal block scalar (|)
+      ((char= ch #\|)
+       (blocks:parse-literal-block-scalar lookahead))
       ;; Scalar-first: read the scalar, then check for mapping
       (t
        (let ((scalar (scalars:parse-scalar-lookahead lookahead)))
@@ -79,7 +82,7 @@
   "Parse a YAML value from SOURCE.
 SOURCE must be a stream.
 Returns the parsed value or +eof+ at end of input."
-  (let ((lookahead (utils:new-lookahead-stream source :buffer-size 5)))
+  (let ((lookahead (utils:new-lookahead-stream source :buffer-size 16)))
     (let ((result (parse-value lookahead)))
       ;; Skip trailing whitespace and comments
       (scalars:skip-whitespace-and-comments-lookahead lookahead)

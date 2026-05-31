@@ -41,7 +41,8 @@
            :us-021-parse-flow-sequences
            :us-022-parse-flow-mappings
            :us-023-parse-nested-flow-collections
-           :us-024-parse-empty-collections))
+           :us-024-parse-empty-collections
+           :us-025-parse-literal-block-scalars))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -1303,6 +1304,69 @@ string: hello")))
         "Document start then empty map")
     (is = 0 (hash-table-count result)
         "Empty map from doc start")))
+
+(define-test us-025-parse-literal-block-scalars
+  ;; Test 1: Basic literal block scalar preserves newlines
+  (let ((result (parse-from-string
+                  (format nil
+                    "|~%  line1~%  line2~%  line3"))))
+    (is equal
+        (format nil "line1~%line2~%line3")
+        result
+        "Literal block scalar preserves newlines"))
+  ;; Test 2: Single line literal block
+  (let ((result (parse-from-string
+                  (format nil "|~%  hello"))))
+    (is equal "hello" result
+        "Single line literal block scalar"))
+  ;; Test 3: Empty literal block scalar
+  (let ((result (parse-from-string
+                  (format nil "|~%"))))
+    (is equal "" result
+        "Empty literal block scalar"))
+  ;; Test 4: Literal block scalar with indentation stripping
+  (let ((result (parse-from-string
+                  (format nil "|~%    line1~%    line2"))))
+    (is equal
+        (format nil "line1~%line2")
+        result
+        "Common indentation is stripped"))
+  ;; Test 5: Literal block scalar preserves trailing spaces
+  (let ((result (parse-from-string
+                  (format nil "|~%  line1   ~%  line2"))))
+    (is equal
+        (format nil "line1   ~%line2")
+        result
+        "Trailing spaces are preserved"))
+  ;; Test 6: Literal block scalar as mapping value
+  (let ((result (parse-from-string
+                  (format nil "key: |~%  value1~%  value2"))))
+    (is equal
+        (format nil "value1~%value2")
+        (gethash "key" result)
+        "Literal block scalar as mapping value"))
+  ;; Test 7: Literal block scalar preserves empty lines
+  (let ((result (parse-from-string
+                  (format nil "|~%  line1~%~%  line3"))))
+    (is equal
+        (format nil "line1~%~%line3") result
+        "Empty lines preserved in literal block"))
+  ;; Test 8: Multiple literal block scalars in a sequence
+  (let ((result (parse-from-string
+                  (format nil "- |~%  first~%- |~%  second"))))
+    (is equal '("first" "second") result
+        "Multiple literal blocks in sequence"))
+  ;; Test 9: Literal block scalar with mixed indentation
+  (let ((result (parse-from-string
+                  (format nil "|~%  line1~%   line2~%  line3"))))
+    (is equal
+        (format nil "line1~% line2~%line3")
+        result
+        "Mixed indentation preserved correctly"))
+  ;; Test 10: Single pipe with no content
+  (let ((result (parse-from-string "|")))
+    (is equal "" result
+        "Single pipe with no content")))
 
 ;;; Phase 3: Advanced Features Tests
 

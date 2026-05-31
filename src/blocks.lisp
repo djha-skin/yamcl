@@ -14,6 +14,7 @@
    #:parse-block-sequence
    #:parse-flow-sequence
    #:parse-flow-mapping
+   #:parse-literal-block-scalar
    #:scalar-to-key-string))
 
 (in-package #:com.djhaskin.yamcl/blocks)
@@ -57,6 +58,9 @@
       ;; Flow mapping value
       ((char= ch #\{)
        (parse-flow-mapping lookahead))
+      ;; Literal block scalar value
+      ((char= ch #\|)
+       (parse-literal-block-scalar lookahead))
       (t
        (parse-scalar-lookahead lookahead)))))
 
@@ -333,3 +337,125 @@ collections, and comments."
                          :expected
                          "comma or closing brace"
                          :got ch4)))))))))))
+
+(defun parse-literal-block-scalar (lookahead)
+  "Parse a YAML literal block scalar from LOOKAHEAD.
+The pipe character has NOT been consumed yet.
+Reads the pipe, then subsequent indented lines, strips
+common indentation, and returns the content as a string."
+  (lookahead-read-chr lookahead) ;; consume |
+  ;; Skip rest of line (block header / trailing content)
+  (loop for ch = (lookahead-peek-chr lookahead 0)
+        while (and (characterp ch)
+                   (not (char= ch #\Newline))
+                   (not (char= ch #\Return))
+                   (not (eq ch +eof+)))
+        do (lookahead-read-chr lookahead))
+  ;; Consume newline after |
+  (let ((ch (lookahead-peek-chr lookahead 0)))
+    (when (and (characterp ch)
+               (or (char= ch #\Newline)
+                   (char= ch #\Return)))
+      (lookahead-read-chr lookahead)
+      (when (and (char= ch #\Return)
+                 (let ((n (lookahead-peek-chr
+                            lookahead 0)))
+                   (and (characterp n)
+                        (char= n #\Newline))))
+        (lookahead-read-chr lookahead))))
+  ;; Collect all raw lines until end of scalar.
+  ;; Use offset-based peeking to count indentation
+  ;; without consuming characters.
+  (let ((raw-lines nil)
+        (block-indent nil))
+    (loop
+      ;; Count indentation via offset peeking
+      (let ((indent 0))
+        (loop for offset from 0
+              while (and (< offset 16)
+                         (let ((ch
+                                 (lookahead-peek-chr
+                                   lookahead offset)))
+                           (and (characterp ch)
+                                (char= ch #\Space))))
+              do (incf indent))
+        (let ((ch (lookahead-peek-chr
+                    lookahead indent)))
+          (cond
+            ;; End of input
+            ((eq ch +eof+)
+             (return))
+            ;; Empty line (just newline)
+            ((and (characterp ch)
+                  (or (char= ch #\Newline)
+                      (char= ch #\Return)))
+             ;; If block-indent is known, this is an
+             ;; empty content line. Preserve it.
+             (when block-indent
+               (push "" raw-lines))
+             ;; If block-indent NOT known, skip this
+             ;; blank line (it's before any content).
+             ;; Consume the newline.
+             (lookahead-read-chr lookahead)
+             (when (and (characterp ch)
+                        (char= ch #\Return)
+                        (let ((n (lookahead-peek-chr
+                                   lookahead 0)))
+                          (and (characterp n)
+                               (char= n #\Newline))))
+               (lookahead-read-chr lookahead)))
+            ;; Non-empty content line
+            (t
+             (when (null block-indent)
+               ;; First content line determines
+               ;; block-indent
+               (setf block-indent indent))
+             (when (< indent block-indent)
+               ;; Less indented than block - end scalar
+               (return))
+             ;; Skip exactly block-indent spaces
+             (loop repeat block-indent
+                   do (lookahead-read-chr lookahead))
+             ;; Collect rest of line content
+             (let ((chars nil))
+               (loop for ch2 =
+                       (lookahead-peek-chr
+                         lookahead 0)
+                     while (and (characterp ch2)
+                                (not (char=
+                                        ch2
+                                        #\Newline))
+                                (not (char=
+                                        ch2
+                                        #\Return))
+                                (not (eq ch2
+                                         +eof+)))
+                     do (lookahead-read-chr
+                          lookahead)
+                        (push ch2 chars))
+               (push (coerce (reverse chars)
+                             'string)
+                     raw-lines))
+             ;; Consume newline at end of line
+             (let ((ch2 (lookahead-peek-chr
+                           lookahead 0)))
+               (cond
+                 ((eq ch2 +eof+) (return))
+                 ((or (char= ch2 #\Newline)
+                      (char= ch2 #\Return))
+                  (lookahead-read-chr lookahead)
+                  (when (and (char= ch2 #\Return)
+                             (let ((n
+                                     (lookahead-peek-chr
+                                       lookahead
+                                       0)))
+                               (and (characterp n)
+                                    (char= n
+                                           #\Newline))))
+                    (lookahead-read-chr lookahead)))
+                 (t (return)))))))))
+    ;; If block-indent was never found, scalar is empty
+    (unless block-indent
+      (return-from parse-literal-block-scalar ""))
+    (format nil "~{~A~^~%~}"
+            (reverse raw-lines))))
