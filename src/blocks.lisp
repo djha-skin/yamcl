@@ -138,9 +138,14 @@ a single sequence item.
 Returns a list of parsed items."
   (let ((items nil))
     (loop
-      ;; Consume the dash and space
+      ;; Consume the dash
       (lookahead-read-chr lookahead)
-      (lookahead-read-chr lookahead)
+      ;; Consume trailing space if present
+      (let ((ch (lookahead-peek-chr lookahead 0)))
+        (when (and (characterp ch)
+                   (or (char= ch #\Space)
+                       (char= ch #\Tab)))
+          (lookahead-read-chr lookahead)))
       ;; Parse the item at deeper indent
       (let ((item (funcall item-parser
                            lookahead (+ indent 2))))
@@ -151,12 +156,14 @@ Returns a list of parsed items."
       (let ((col (current-column lookahead)))
         (when (/= col indent)
           (return)))
-      ;; Check for dash-space
+      ;; Check for dash (space or newline follows)
       (let ((ch (lookahead-peek-chr lookahead 0))
             (ch1 (lookahead-peek-chr lookahead 1)))
         (unless (and (characterp ch)
                      (char= ch #\-)
                      (characterp ch1)
-                     (char= ch1 #\Space))
+                     (or (char= ch1 #\Space)
+                         (char= ch1 #\Newline)
+                         (char= ch1 #\Return)))
           (return))))
     (reverse items)))

@@ -768,6 +768,49 @@ string: hello")))
     (is equal '(t nil) result
         "Boolean items should parse")))
 
+(define-test us-018-parse-nested-block-sequences
+  :parent phase-2-block-collections
+  "US-018: Parse nested block sequences"
+  ;; Test 1: Simple nesting - item is a sub-sequence
+  (let ((result (parse-from-string (format nil "-~%  - nested"))))
+    (is equal '(("nested")) result
+        "Single nested item should parse"))
+
+  ;; Test 2: Nesting with multiple sub-items
+  (let ((result (parse-from-string (format nil "-~%  - a~%  - b"))))
+    (is equal '(("a" "b")) result
+        "Multiple nested items should parse"))
+
+  ;; Test 3: Inline nesting
+  (let ((result (parse-from-string (format nil "- - a~%  - b"))))
+    (is equal '(("a" "b")) result
+        "Inline nested dash should parse"))
+
+  ;; Test 4: Mixed scalar and sequence items
+  (let ((result (parse-from-string (format nil "- 42~%-~%  - a~%  - b"))))
+    (is equal '(42 ("a" "b")) result
+        "Mixed scalar and sequence items should parse"))
+
+  ;; Test 5: Deep nesting
+  (let ((result (parse-from-string (format nil "-~%  -~%    - deep"))))
+    (is equal '((("deep"))) result
+        "Three levels of nesting should parse"))
+
+  ;; Test 6: Multiple top-level items with nesting
+  (let ((result (parse-from-string (format nil "-~%  - a~%-~%  - b"))))
+    (is equal '(("a") ("b")) result
+        "Multiple top-level nested items should parse"))
+
+  ;; Test 7: Nesting with different scalar types
+  (let ((result (parse-from-string (format nil "-~%  - 42~%  - true~%  - null"))))
+    (is equal '((42 t cl:null)) result
+        "Nested items with different types should parse"))
+
+  ;; Test 8: Nesting with string values
+  (let ((result (parse-from-string (format nil "-~%  - \"quoted\"~%  - 'single'"))))
+    (is equal '(("quoted" "single")) result
+        "Nested items with quoted strings should parse")))
+
 ;;; Phase 3: Advanced Features Tests
 
 (define-test phase-3-advanced-features

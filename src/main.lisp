@@ -52,10 +52,13 @@
        (utils:lookahead-read-chr lookahead)  ;; second .
        (utils:lookahead-read-chr lookahead)  ;; third .
        utils:+eof+)
-      ;; Block sequence entry (- space)
+      ;; Block sequence entry (- space or - eol)
       ((and (char= ch #\-)
             (let ((ch1 (utils:lookahead-peek-chr lookahead 1)))
-              (and (characterp ch1) (char= ch1 #\Space))))
+              (and (characterp ch1)
+                   (or (char= ch1 #\Space)
+                       (char= ch1 #\Newline)
+                       (char= ch1 #\Return)))))
        (blocks:parse-block-sequence lookahead indent
                                     #'parse-value))
       ;; Scalar-first: read the scalar, then check for mapping
