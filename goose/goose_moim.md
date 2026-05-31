@@ -3,4 +3,4 @@ We are working on the user stories found in the
 guess yourself. Practice TDD, and write as many unit tests as might be
 appropriate. Get them to pass. Work on the user stories one by one. Feel free to
 split them up into substories in that folder at need. Keep the code organized.
-Use the `cl-mcp` tool wherever possible. Avoid shelling out.
+Use the `cl-mcp` tool wherever possible. Avoid shelling out. Go!
