@@ -45,7 +45,8 @@
            :us-025-parse-literal-block-scalars
            :us-026-parse-folded-block-scalars
            :us-027-handle-chomping-modes
-           :us-028-handle-indentation-indicators))
+           :us-028-handle-indentation-indicators
+           :us-029-parse-anchors))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -1594,6 +1595,58 @@ string: hello")))
                   (format nil "|0~%content"))))
     (is equal "content" result
         "|0 strips zero spaces")))
+
+(define-test us-029-parse-anchors
+  ;; Test 1: Basic anchor on scalar
+  (let ((result (parse-from-string "&anchor 42")))
+    (is = 42 result
+        "Anchor on scalar should parse the value"))
+  ;; Test 2: Anchor on string
+  (let ((result (parse-from-string "&tag hello")))
+    (is string= "hello" result
+        "Anchor on bareword string should work"))
+  ;; Test 3: Anchor on double-quoted string
+  (let ((result (parse-from-string "&x \"world\"")))
+    (is string= "world" result
+        "Anchor on double-quoted string should work"))
+  ;; Test 4: Anchor in mapping value
+  (let ((result (parse-from-string
+                  "key: &ref 42")))
+    (is = 42 (gethash "key" result)
+        "Anchor on mapping value should work"))
+  ;; Test 5: Anchor in sequence item
+  (let ((result (parse-from-string
+                  (format nil "- &item 1~%~C- 2"
+                          #\Newline))))
+    (is equal '(1 2) result
+        "Anchor on sequence item should work"))
+  ;; Test 6: Multiple anchored values in mapping
+  (let ((result (parse-from-string
+                  (format nil "a: &x 1~%b: &y 2"))))
+    (is = 1 (gethash "a" result)
+        "First anchored mapping value correct")
+    (is = 2 (gethash "b" result)
+        "Second anchored mapping value correct"))
+  ;; Test 7: Anchor on null value
+  (let ((result (parse-from-string "&nothing null")))
+    (is eq 'cl:null result
+        "Anchor on null should return cl:null"))
+  ;; Test 8: Anchor with hyphen in name
+  (let ((result (parse-from-string "&my-anchor 10")))
+    (is = 10 result
+        "Anchor name with hyphen should work"))
+  ;; Test 9: Anchor with underscore in name
+  (let ((result (parse-from-string "&my_anchor 20")))
+    (is = 20 result
+        "Anchor name with underscore should work"))
+  ;; Test 10: Anchor on boolean
+  (let ((result (parse-from-string "&flag true")))
+    (is eq t result
+        "Anchor on boolean true should work"))
+  ;; Test 11: Anchor on negative number
+  (let ((result (parse-from-string "&neg -5")))
+    (is = -5 result
+        "Anchor on negative number should work")))
 
 ;;; Phase 3: Advanced Features Tests
 

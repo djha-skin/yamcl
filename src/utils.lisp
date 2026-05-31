@@ -25,12 +25,18 @@
    #:streamed
    #:unread-all
    #:current-column
-   #:yaml-number-to-cl))
+   #:yaml-number-to-cl
+   #:*anchor-table*))
 
 (in-package #:com.djhaskin.yamcl/utils)
 
 (defconstant +eof+ :eof)
 (defconstant +null+ 'cl:null)
+
+(defvar *anchor-table* nil
+  "Hash table mapping anchor names to node values.
+Bound during parsing so anchors can be stored and
+aliases can resolve later.")
 
 (deftype streamable ()
   '(or boolean stream))

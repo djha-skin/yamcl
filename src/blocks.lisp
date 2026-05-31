@@ -53,6 +53,23 @@
                  (char= next #\Newline) (char= next #\Return))
              +null+
              (parse-scalar-lookahead lookahead))))
+      ;; Anchor prefix - parse name, then node
+      ((char= ch #\&)
+       (lookahead-read-chr lookahead)
+       (let ((chars nil))
+         (loop for ch2 = (lookahead-peek-chr lookahead 0)
+               while (and (characterp ch2)
+                          (or (alpha-char-p ch2)
+                              (digit-char-p ch2)
+                              (char= ch2 #\_)
+                              (char= ch2 #\-)))
+               do (lookahead-read-chr lookahead)
+                  (push ch2 chars))
+         (let* ((name (coerce (reverse chars) 'string))
+                (node (parse-value-after-colon lookahead)))
+           (when *anchor-table*
+             (setf (gethash name *anchor-table*) node))
+           node)))
       ;; Flow sequence value
       ((char= ch #\[)
        (parse-flow-sequence lookahead))
@@ -166,6 +183,23 @@ If colon follows, it is a mapping key -- delegate to
 parse-mapping-from-key. If not, return the scalar as-is."
   (let ((ch (lookahead-peek-chr lookahead 0)))
     (cond
+      ;; Anchor prefix
+      ((and (characterp ch) (char= ch #\&))
+       (lookahead-read-chr lookahead)
+       (let ((chars nil))
+         (loop for ch2 = (lookahead-peek-chr lookahead 0)
+               while (and (characterp ch2)
+                          (or (alpha-char-p ch2)
+                              (digit-char-p ch2)
+                              (char= ch2 #\_)
+                              (char= ch2 #\-)))
+               do (lookahead-read-chr lookahead)
+                  (push ch2 chars))
+         (let* ((name (coerce (reverse chars) 'string))
+                (node (parse-block-value lookahead indent)))
+           (when *anchor-table*
+             (setf (gethash name *anchor-table*) node))
+           node)))
       ;; Block sequence entry (- space or - eol)
       ((and (characterp ch)
             (char= ch #\-)

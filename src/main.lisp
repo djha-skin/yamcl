@@ -20,6 +20,24 @@
 
 ;;; Parsing
 
+(defun parse-anchor-name (lookahead)
+  "Parse an anchor name from LOOKAHEAD after & consumed.
+Returns the anchor name as a string."
+  (let ((chars nil))
+    (loop for ch = (utils:lookahead-peek-chr lookahead 0)
+          while (and (characterp ch)
+                     (or (alpha-char-p ch)
+                         (digit-char-p ch)
+                         (char= ch #\_)
+                         (char= ch #\-)))
+          do (utils:lookahead-read-chr lookahead)
+             (push ch chars))
+    (when (null chars)
+      (error 'utils:extraction-error
+             :expected "anchor name"
+             :got (utils:lookahead-peek-chr lookahead 0)))
+    (coerce (reverse chars) 'string)))
+
 (defun parse-value (lookahead &optional (indent 0))
   "Parse a YAML value from LOOKAHEAD at the given INDENT level.
    Skip comments and whitespace, then try:
@@ -32,6 +50,14 @@
     (cond
       ((or (null ch) (eq ch utils:+eof+))
        utils:+eof+)
+      ;; Anchor (&name)
+      ((and (characterp ch) (char= ch #\&))
+       (utils:lookahead-read-chr lookahead)
+       (let* ((name (parse-anchor-name lookahead))
+              (node (parse-value lookahead indent)))
+         (when utils:*anchor-table*
+           (setf (gethash name utils:*anchor-table*) node))
+         node))
       ;; Document start marker (---)
       ((and (char= ch #\-)
             (let ((ch1 (utils:lookahead-peek-chr lookahead 1))
@@ -85,7 +111,8 @@
   "Parse a YAML value from SOURCE.
 SOURCE must be a stream.
 Returns the parsed value or +eof+ at end of input."
-  (let ((lookahead (utils:new-lookahead-stream source :buffer-size 16)))
+  (let ((lookahead (utils:new-lookahead-stream source :buffer-size 16))
+        (utils:*anchor-table* (make-hash-table :test 'equal)))
     (let ((result (parse-value lookahead)))
       ;; Skip trailing whitespace and comments
       (scalars:skip-whitespace-and-comments-lookahead lookahead)
