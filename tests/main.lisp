@@ -38,7 +38,8 @@
            :us-018-parse-nested-block-sequences
            :us-019-parse-mixed-mappings-and-sequences
            :us-020-handle-indentation-in-block-collections
-           :us-021-parse-flow-sequences))
+           :us-021-parse-flow-sequences
+           :us-022-parse-flow-mappings))
 
 (cl:in-package :com.djhaskin.yamcl/tests)
 
@@ -1041,6 +1042,101 @@ string: hello")))
   (let ((result (parse-from-string (format nil "[a, # comment~%b]"))))
     (is equal '("a" "b") result
         "Comments inside flow sequence should be skipped")))
+
+(define-test us-022-parse-flow-mappings
+  :parent phase-2-block-collections
+  "US-022: Parse flow mappings {key: value}"
+
+  ;; Test 1: Empty flow mapping
+  (let ((result (parse-from-string "{}")))
+    (is typep 'hash-table result
+        "{} should parse to a hash table")
+    (is = 0 (hash-table-count result)
+        "Empty {} should have 0 entries"))
+
+  ;; Test 2: Single pair
+  (let ((result (parse-from-string "{a: b}")))
+    (is string= "b" (gethash "a" result)
+        "{a: b} should map a to b"))
+
+  ;; Test 3: Two pairs
+  (let ((result (parse-from-string "{a: b, c: d}")))
+    (is string= "b" (gethash "a" result) "first pair")
+    (is string= "d" (gethash "c" result) "second pair"))
+
+  ;; Test 4: Trailing comma
+  (let ((result (parse-from-string "{a: b,}")))
+    (is = 1 (hash-table-count result)
+        "Trailing comma should be allowed")
+    (is string= "b" (gethash "a" result)
+        "Value should still parse"))
+
+  ;; Test 5: Numbers
+  (let ((result (parse-from-string "{x: 1, y: 2.5}")))
+    (is = 1 (gethash "x" result) "integer value")
+    (is = 2.5 (gethash "y" result) "float value"))
+
+  ;; Test 6: Booleans and null
+  (let ((result
+          (parse-from-string
+            "{flag: true, other: false, val: null}")))
+    (is eq t (gethash "flag" result) "true value")
+    (is eql nil (gethash "other" result)
+        "false value")
+    (is eq 'cl:null (gethash "val" result)
+        "null value"))
+
+  ;; Test 7: Quoted string keys
+  (let ((result
+          (parse-from-string "{'key': 'value'}")))
+    (is string= "value" (gethash "key" result)
+        "Single-quoted key should work"))
+
+  ;; Test 8: Extra spaces
+  (let ((result (parse-from-string "{  a :  b  }")))
+    (is string= "b" (gethash "a" result)
+        "Extra spaces should be tolerated"))
+
+  ;; Test 9: No colon (error)
+  (test-parse-fails "{a b}"
+      "Flow mapping without colon should error")
+
+  ;; Test 10: Nested flow mapping
+  (let ((result
+          (parse-from-string "{a: {b: c}}")))
+    (let ((inner (gethash "a" result)))
+      (is typep 'hash-table inner
+          "Nested value should be hash table")
+      (is string= "c" (gethash "b" inner)
+          "Nested value should map b to c")))
+
+  ;; Test 11: Flow sequence as value
+  (let ((result
+          (parse-from-string "{items: [1, 2, 3]}")))
+    (is equal '(1 2 3)
+        (gethash "items" result)
+        "Flow sequence value should work"))
+
+  ;; Test 12: Multiple pairs with mixed types
+  (let ((result
+          (parse-from-string
+            "{name: \"hello\", count: 42,
+              active: true}")))
+    (is string= "hello" (gethash "name" result)
+        "String value")
+    (is = 42 (gethash "count" result)
+        "Integer value")
+    (is eq t (gethash "active" result)
+        "Boolean value"))
+
+  ;; Test 13: Flow mapping with comments
+  (let ((result
+          (parse-from-string
+            (format nil "{a: b, # comment~%c: d}"))))
+    (is string= "b" (gethash "a" result)
+        "First pair with comment after comma")
+    (is string= "d" (gethash "c" result)
+        "Second pair after comment")))
 
 ;;; Phase 3: Advanced Features Tests
 

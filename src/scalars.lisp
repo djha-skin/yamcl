@@ -179,7 +179,8 @@ Returns T or NIL. Case-insensitive per YAML 1.2.2 Core Schema."
                     (not (char= next-ch #\Newline))
                     (not (char= next-ch #\Return))
                     (not (char= next-ch #\,))
-                    (not (char= next-ch #\])))
+                    (not (char= next-ch #\]))
+                    (not (char= next-ch #\})))
            (error 'extraction-error
                   :expected
                   "end of scalar after 'true'"
@@ -227,7 +228,8 @@ Returns T or NIL. Case-insensitive per YAML 1.2.2 Core Schema."
                     (not (char= next-ch #\Newline))
                     (not (char= next-ch #\Return))
                     (not (char= next-ch #\,))
-                    (not (char= next-ch #\])))
+                    (not (char= next-ch #\]))
+                    (not (char= next-ch #\})))
            (error 'extraction-error
                   :expected
                   "end of scalar after 'false'"

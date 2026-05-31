@@ -64,6 +64,9 @@
       ;; Flow sequence ([a, b, c])
       ((char= ch #\[)
        (blocks:parse-flow-sequence lookahead))
+      ;; Flow mapping ({key: value})
+      ((char= ch #\{)
+       (blocks:parse-flow-mapping lookahead))
       ;; Scalar-first: read the scalar, then check for mapping
       (t
        (let ((scalar (scalars:parse-scalar-lookahead lookahead)))

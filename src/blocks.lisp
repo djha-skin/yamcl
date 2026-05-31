@@ -13,6 +13,7 @@
    #:parse-block-value
    #:parse-block-sequence
    #:parse-flow-sequence
+   #:parse-flow-mapping
    #:scalar-to-key-string))
 
 (in-package #:com.djhaskin.yamcl/blocks)
@@ -228,6 +229,10 @@ flow sequences, and comments inside the sequence."
           ((char= ch #\[)
            (push (parse-flow-sequence lookahead)
                  items))
+          ;; Nested flow mapping
+          ((char= ch #\{)
+           (push (parse-flow-mapping lookahead)
+                 items))
           ;; Comma (at start or after another comma)
           ((char= ch #\,)
            (lookahead-read-chr lookahead))
@@ -252,3 +257,73 @@ flow sequences, and comments inside the sequence."
                   :expected
                   "comma or closing bracket"
                   :got ch2))))))))))
+
+(defun parse-flow-mapping (lookahead)
+  "Parse a YAML flow mapping {key: value, ...} from LOOKAHEAD.
+Returns a hash table with string keys.
+Handles empty mappings, trailing commas, nested flow
+collections, and comments."
+  (lookahead-read-chr lookahead)
+  (let ((table (make-hash-table :test 'equal)))
+    (loop
+      (skip-flow-separator lookahead)
+      (let ((ch (lookahead-peek-chr lookahead 0)))
+        (cond
+          ((char= ch #\})
+           (lookahead-read-chr lookahead)
+           (return table))
+          ((char= ch #\,)
+           (lookahead-read-chr lookahead))
+          (t
+           (let ((key
+                   (parse-flow-scalar-lookahead
+                     lookahead)))
+             (when (eq key +eof+)
+               (error 'extraction-error
+                      :expected "mapping key"
+                      :got +eof+))
+             (skip-flow-separator lookahead)
+             (let ((ch2
+                     (lookahead-peek-chr
+                       lookahead 0)))
+               (unless (and (characterp ch2)
+                            (char= ch2 #\:))
+                 (error 'extraction-error
+                        :expected
+                        "colon after key"
+                        :got ch2))
+               (lookahead-read-chr lookahead)
+               (skip-flow-separator lookahead)
+               (let ((ch3
+                       (lookahead-peek-chr
+                         lookahead 0))
+                     (ks
+                       (scalar-to-key-string key)))
+                 (cond
+                   ((char= ch3 #\[)
+                    (setf (gethash ks table)
+                          (parse-flow-sequence
+                            lookahead)))
+                   ((char= ch3 #\{)
+                    (setf (gethash ks table)
+                          (parse-flow-mapping
+                            lookahead)))
+                   (t
+                    (setf (gethash ks table)
+                          (parse-flow-scalar-lookahead
+                            lookahead))))))
+             (skip-flow-separator lookahead)
+             (let ((ch4
+                     (lookahead-peek-chr
+                       lookahead 0)))
+               (cond
+                 ((char= ch4 #\})
+                  (lookahead-read-chr lookahead)
+                  (return table))
+                 ((char= ch4 #\,)
+                  (lookahead-read-chr lookahead))
+                 (t
+                  (error 'extraction-error
+                         :expected
+                         "comma or closing brace"
+                         :got ch4)))))))))))
